@@ -82,8 +82,8 @@ docker compose logs -f
 bot 是上游:寫 Google 表「短影音進度N」的「暫存區」分頁。下游 [voc](https://github.com/pei760730/voc) 的 `voc sync-pool` 從同一張表讀「暫存區」→ 映射進「參考池」,再走 pick→待拍→完成。
 
 - bot `GOOGLE_SHEET_ID` 要等於 voc 的 `VOC_SPREADSHEET_ID`,憑證共用同一把 service account。
-- voc 按表頭名讀 `PLATFORM / VIDEO_REF / CLEAN_URL / VIDEO_ID / SENDER / DATE / NOTE` 這 7 欄(改欄名要兩 repo 一起改)。
-- 細節與已知去重 caveat 見 `CLAUDE.md` 第六層。
+- voc 精簡後只按表頭名讀 `PLATFORM / VIDEO_REF / CLEAN_URL / DATE` 4 欄(改這幾欄名要兩 repo 一起改);其餘細節留在暫存區當底料。
+- 契約現狀與殘留去重 edge 見 `CLAUDE.md` 第六層。
 
 ## 設計原則
 

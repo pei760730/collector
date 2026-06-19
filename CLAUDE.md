@@ -61,14 +61,12 @@ voc 的 `src/voc/sync.py`(指令 `voc sync-pool`)從**同一張表**讀「暫存
 
 - **同一張表**:bot `GOOGLE_SHEET_ID` 必須 = voc `VOC_SPREADSHEET_ID`(`1V_CaTb…`)。憑證共用 voc 的 `service_account.json`(`voc-sheets@voc-499914`)。
 - **bot 自建暫存區分頁**:voc `init-sheet` 不建「暫存區」,由 bot `GoogleSheetsStorage.ensureHeader` 啟動時自建(addSheet + 表頭)。
-- **契約欄位(voc 按表頭名讀這 7 欄,改名要兩邊一起改)**:
+- **契約欄位(以 voc `sync.py` 當前讀的為準,2026-06-20)**:voc 精簡後**只按表頭名讀這 4 欄**,改這幾欄名要兩 repo 一起改:
   - `PLATFORM` → 平台(voc `_PLATFORM_MAP` 轉小寫;7 個顯示名都對得上)
-  - `VIDEO_REF` → 原始連結
-  - `CLEAN_URL` → 乾淨連結(**voc 去重 key 來源**)
-  - `VIDEO_ID` → 影片ID
-  - `SENDER` → 來源
+  - `VIDEO_REF` → 後備連結(CLEAN_URL 空時用)
+  - `CLEAN_URL` → 連結(**voc 去重 key + 「打開」用**)
   - `DATE` → 加入日期(voc `normalize_date` 轉 ISO)
-  - `NOTE` → 點子(使用者打的「梗」,給之後 AI 編劇)
-- **去重**:voc 用**乾淨連結**(非 VIDEO_ID,因 bot 帶前綴 `ig_xxx` 跟 voc 裸 id 對不上)。冪等,重跑 sync 不重複進參考池。
-- **⚠️ 已知 bug(在 voc 端)**:voc `_dedup_key` 會砍掉乾淨連結的 `?query`,YouTube/Facebook 影片 ID 在 query → 所有 watch 連結塌成同一 key、第二支以後被誤判重複丟掉。修法在 voc:去重改用 `平台+裸影片ID`(切掉 bot 前綴)。**改 voc 那條另開 voc session**,別從 bot 這條滑進上游。
-- 驗證腳本:`npx tsx scripts/verify-sheet.ts`(唯讀,列分頁/確認參考池在)。
+- **bot 仍寫滿 14 欄沒問題**:voc 參考池現在只留 5 欄(id/平台/連結/狀態/加入日期),`VIDEO_ID/SENDER/NOTE` 等原始細節 voc **不再複製**,留在暫存區當原始底料(voc 設計如此,不是漏)。梗/點子改在 `pick` 時落地到「待拍.備註」。
+- **去重**:voc 用**乾淨連結**(`_dedup_key` 砍 query/fragment + 去尾斜線 + lower)。冪等,重跑 sync 不重複。
+- **⚠️ 殘留 edge(voc 端,低頻)**:`_dedup_key` 砍 query → 只有 `youtube.com/watch?v=` 這種「ID 在 query」的會誤判重複;`youtu.be/`、`shorts/`、IG、TikTok、FB share、X、小紅書 都是 path-based,不受影響。要修在 voc(dedup 對 youtube 改用 v= 參數或 path 正規化)。**改 voc 另開 voc session**,別從 bot 滑上游。
+- 驗證腳本:`npx tsx scripts/verify-sheet.ts`(列分頁)、`scripts/read-staging.ts`(讀暫存區)、`scripts/read-refs.ts`(讀參考池)。
