@@ -2,8 +2,13 @@
  * 讀環境變數 → 型別化 config。憑證/token 一律走 env,不進版控。
  * 缺必要變數會在啟動時丟錯(fail fast),不要讓 bot 帶半套設定跑起來。
  */
-import "dotenv/config";
+import dotenv from "dotenv";
 import { readFileSync } from "node:fs";
+
+// override:true —— .env 蓋過系統既有環境變數。
+// 原因:Windows 系統環境若殘留舊/打錯的 TELEGRAM_BOT_TOKEN,dotenv 預設不覆蓋會讓
+// bot 拿到壞值(踩過 l→1 typo 的 401)。Docker 沒 .env 檔時此行 no-op,不影響真環境。
+dotenv.config({ override: true });
 
 function required(name: string): string {
   const v = process.env[name];
