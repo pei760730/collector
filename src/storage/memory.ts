@@ -25,7 +25,10 @@ export class MemoryStorage implements Storage {
     for (let i = 0; i < this.rows.length; i++) {
       const r = this.rows[i]!;
       if (r.VIDEO_ID.trim() !== key) continue;
-      if (withinDays != null && ageInDays(r.DATE) > withinDays) continue;
+      // 與 GoogleSheetsStorage 一致:日期解析不出(Infinity)不可略過,
+      // 否則 DATE 被改壞的同 VIDEO_ID 列會被當不存在而重寫。
+      const age = ageInDays(r.DATE);
+      if (withinDays != null && Number.isFinite(age) && age > withinDays) continue;
       return { row: r, rowNumber: i + 2 }; // +2:表頭 + 1-based
     }
     return null;

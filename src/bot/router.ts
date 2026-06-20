@@ -68,11 +68,13 @@ export function createBot(config: Config, storage: Storage): Telegraf {
           expandShortUrls: config.expandShortUrls,
         },
       );
-      await ctx.reply(result.reply);
+      // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,
+      // 不能因此吞掉 notifyError(寫表結果才是重點)。對齊 /stats、/move 的護法。
+      await ctx.reply(result.reply).catch(() => {});
       if (result.error) await notifyError(result.error);
     } catch (err) {
       logger.error("collect 例外", err);
-      await ctx.reply("❌ 處理時發生未預期錯誤。");
+      await ctx.reply("❌ 處理時發生未預期錯誤。").catch(() => {});
       await notifyError(`collect 例外:${errText(err)}`);
     }
   });

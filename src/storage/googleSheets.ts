@@ -33,8 +33,17 @@ function colLetter(index: number): string {
 
 const LAST_COL = colLetter(STAGING_COLUMNS.length - 1);
 
-/** 429 / 5xx 退避重試(沿用 th-ops 策略)。其餘錯誤直接丟。 */
-async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 4): Promise<T> {
+/**
+ * 429 / 5xx 退避重試(沿用 th-ops 策略)。其餘錯誤直接丟。
+ * `alreadyDone`:重試前的冪等護欄 —— 非冪等寫入(append)可能「寫成功但回應遺失」
+ * 觸發重試,導致雙寫;重試前先問一次「上次其實成功了嗎?」是就視為完成、不再重打。
+ */
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  opts: { tries?: number; alreadyDone?: () => Promise<boolean> } = {},
+): Promise<T> {
+  const tries = opts.tries ?? 4;
   let lastErr: unknown;
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
@@ -45,6 +54,16 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 4): Pro
       const code = e?.code ?? e?.response?.status;
       const retryable = code === 429 || (typeof code === "number" && code >= 500 && code < 600);
       if (!retryable || attempt === tries) throw err;
+      if (opts.alreadyDone) {
+        try {
+          if (await opts.alreadyDone()) {
+            logger.warn(`${label} 第 ${attempt} 次回應遺失但寫入已存在,視為成功(不重打)`);
+            return undefined as T;
+          }
+        } catch {
+          // 護欄查詢本身失敗就照常重試,不放大故障。
+        }
+      }
       const backoff = 500 * 2 ** (attempt - 1); // 0.5s,1s,2s
       logger.warn(`${label} 第 ${attempt}/${tries} 次失敗(code=${code}),${backoff}ms 後重試`);
       await new Promise((r) => setTimeout(r, backoff));
@@ -174,21 +193,32 @@ export class GoogleSheetsStorage implements Storage {
     if (!key) return null; // 空 key 不去重(避免跟空白列互撞)
     for (const { row, rowNumber } of await this.readRows()) {
       if (row.VIDEO_ID.trim() !== key) continue;
-      if (withinDays != null && ageInDays(row.DATE) > withinDays) continue;
+      // 只在「日期可解析且確實超窗」時才略過;解析不出(ageInDays=Infinity)時
+      // 不能略過 —— 否則同 VIDEO_ID 但 DATE 被改壞的列會被當成不存在而重寫。
+      const age = ageInDays(row.DATE);
+      if (withinDays != null && Number.isFinite(age) && age > withinDays) continue;
       return { row, rowNumber };
     }
     return null;
   }
 
   async append(row: StagingRow): Promise<void> {
-    await withRetry("append", () =>
-      this.sheets.spreadsheets.values.append({
-        spreadsheetId: this.sheetId,
-        range: this.range(`A1:${LAST_COL}`),
-        valueInputOption: "RAW",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values: [this.rowToValues(row)] },
-      }),
+    await withRetry(
+      "append",
+      () =>
+        this.sheets.spreadsheets.values.append({
+          spreadsheetId: this.sheetId,
+          range: this.range(`A1:${LAST_COL}`),
+          valueInputOption: "RAW",
+          insertDataOption: "INSERT_ROWS",
+          requestBody: { values: [this.rowToValues(row)] },
+        }),
+      {
+        // 冪等護欄:呼叫端(collect)已先去重,故重試前若這 VIDEO_ID 已在表上,
+        // 必是上一次「寫成功但回應遺失」留下的,視為完成,避免重試雙寫。
+        alreadyDone: async () =>
+          !!row.VIDEO_ID.trim() && (await this.findByVideoId(row.VIDEO_ID)) != null,
+      },
     );
   }
 

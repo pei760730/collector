@@ -59,6 +59,32 @@ describe("runCollect", () => {
     expect(await storage.readAll()).toHaveLength(2);
   });
 
+  it("DATE 壞掉(解析不出)的同 VIDEO_ID 仍當重複,不重寫", async () => {
+    const broken: StagingRow = {
+      ID: "yt_dQw4w9WgXcQ",
+      PLATFORM: "YouTube",
+      VIDEO_REF: "https://youtu.be/dQw4w9WgXcQ",
+      DATE: "壞掉的日期",
+      AGE: "0",
+      NOTE: "舊的",
+      CLEAN_URL: "https://youtu.be/dQw4w9WgXcQ",
+      VIDEO_ID: "yt_dQw4w9WgXcQ",
+      SENDER: "Pei",
+      STATUS: "active",
+      ERROR_LOG: "",
+      PLATFORM_ICON: "📺",
+      PLATFORM_CONFIDENCE: "high",
+      DETECTION_METHOD: "domain_match",
+    };
+    const storage = new MemoryStorage([broken]);
+    const r = await runCollect(
+      { text: "https://youtu.be/dQw4w9WgXcQ 又貼一次", senderName: "Pei" },
+      deps(storage, 180),
+    );
+    expect(r.reply).toContain("已經收過");
+    expect(await storage.readAll()).toHaveLength(1);
+  });
+
   it("無網址 → 格式錯誤提示", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect({ text: "亂打一通", senderName: "Pei" }, deps(storage));
