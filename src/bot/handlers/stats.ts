@@ -3,6 +3,8 @@
  * 總筆數 + 各平台筆數 + 本週/本月新增 + 狀態分布 + 最近 5 筆。
  */
 import type { Storage } from "../../storage/Storage.js";
+import type { Platform } from "../../types.js";
+import { PLATFORM_ICON } from "../../pipeline/detectPlatform.js";
 
 export interface StatsDeps {
   storage: Storage;
@@ -31,7 +33,8 @@ export async function runStats(deps: StatsDeps): Promise<string> {
 
   const recentLines = s.recent.map((r) => {
     const note = r.NOTE ? ` — ${r.NOTE}` : "";
-    return `  ${r.PLATFORM_ICON || "•"} ${r.VIDEO_ID}${note}（${r.DATE}）`;
+    const icon = PLATFORM_ICON[r.PLATFORM as Platform] ?? "•";
+    return `  ${icon} ${r.VIDEO_ID}${note}（${r.DATE}）`;
   });
 
   const out = [

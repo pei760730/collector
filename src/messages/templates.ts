@@ -3,7 +3,13 @@
  * 改進#2:n8n 版用 MarkdownV2 但沒跳脫,含 . - ( ) 會發送失敗;
  * 純文字最穩,emoji 照常顯示,不必跳脫。
  */
-import type { StagingRow } from "../types.js";
+import type { Platform, StagingRow } from "../types.js";
+import { PLATFORM_ICON } from "../pipeline/detectPlatform.js";
+
+/** 平台 → emoji(衍生,不再存欄)。未知平台給個中性點。 */
+function iconFor(platform: string): string {
+  return PLATFORM_ICON[platform as Platform] ?? "•";
+}
 
 export function formatErrorMsg(): string {
   return [
@@ -18,16 +24,14 @@ export function formatErrorMsg(): string {
 
 export function successMsg(row: StagingRow, opts: { unsupported: boolean; isShortUrl: boolean }): string {
   const lines = [
-    `${row.PLATFORM_ICON} 已收進暫存區`,
+    `${iconFor(row.PLATFORM)} 已收進暫存區`,
     `平台:${row.PLATFORM}`,
     `VIDEO_ID:${row.VIDEO_ID}`,
   ];
   if (row.NOTE) lines.push(`備註:${row.NOTE}`);
   lines.push(`提交者:${row.SENDER}　日期:${row.DATE}`);
-  if (row.PLATFORM_CONFIDENCE === "medium") {
-    lines.push("（平台是用 fallback 猜的,可能不準）");
-  }
   if (opts.unsupported) {
+    // fallback 猜平台時 video id 也抓不到 → unsupported,此訊息已涵蓋「可能不準」。
     lines.push("⚠️ 這個平台抓不到 video ID,先以 unknown 收錄。");
   }
   if (opts.isShortUrl) {

@@ -35,20 +35,14 @@ describe("runCollect", () => {
 
   it("超出去重窗 → 視為新筆", async () => {
     const old: StagingRow = {
-      ID: "yt_dQw4w9WgXcQ",
       PLATFORM: "YouTube",
       VIDEO_REF: "https://youtu.be/dQw4w9WgXcQ",
       DATE: "2020/1/1",
-      AGE: "0",
       NOTE: "舊的",
       CLEAN_URL: "https://youtu.be/dQw4w9WgXcQ",
       VIDEO_ID: "yt_dQw4w9WgXcQ",
       SENDER: "Pei",
       STATUS: "active",
-      ERROR_LOG: "",
-      PLATFORM_ICON: "📺",
-      PLATFORM_CONFIDENCE: "high",
-      DETECTION_METHOD: "domain_match",
     };
     const storage = new MemoryStorage([old]);
     const r = await runCollect(
@@ -61,20 +55,14 @@ describe("runCollect", () => {
 
   it("DATE 壞掉(解析不出)的同 VIDEO_ID 仍當重複,不重寫", async () => {
     const broken: StagingRow = {
-      ID: "yt_dQw4w9WgXcQ",
       PLATFORM: "YouTube",
       VIDEO_REF: "https://youtu.be/dQw4w9WgXcQ",
       DATE: "壞掉的日期",
-      AGE: "0",
       NOTE: "舊的",
       CLEAN_URL: "https://youtu.be/dQw4w9WgXcQ",
       VIDEO_ID: "yt_dQw4w9WgXcQ",
       SENDER: "Pei",
       STATUS: "active",
-      ERROR_LOG: "",
-      PLATFORM_ICON: "📺",
-      PLATFORM_CONFIDENCE: "high",
-      DETECTION_METHOD: "domain_match",
     };
     const storage = new MemoryStorage([broken]);
     const r = await runCollect(

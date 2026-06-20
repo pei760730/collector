@@ -46,24 +46,16 @@ export function assembleDraft(parsed: ParsedMessage, now: () => number = Date.no
   const date = todayTaipei(now());
   // 改進#1:VIDEO_ID 不帶多餘空白(直接用乾淨字串)
   const videoId = vid.videoId.trim();
-  // ID = 帶平台前綴的 video id;抓不到時 videoId 已是 unknown_<ts>
-  const id = videoId || `auto_${now()}`;
 
   const row: StagingRow = {
-    ID: id,
     PLATFORM: platform.platform,
     VIDEO_REF: parsed.rawUrl,
     DATE: date,
-    AGE: "0",
     NOTE: parsed.note,
     CLEAN_URL: cleaned.cleanUrl,
     VIDEO_ID: videoId,
     SENDER: parsed.sender,
     STATUS: STATUS.ACTIVE,
-    ERROR_LOG: "",
-    PLATFORM_ICON: platform.icon,
-    PLATFORM_CONFIDENCE: platform.confidence,
-    DETECTION_METHOD: platform.method,
   };
 
   return { row, videoId, unsupported: vid.unsupported, isShortUrl: cleaned.isShortUrl };

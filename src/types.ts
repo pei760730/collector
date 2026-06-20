@@ -52,41 +52,34 @@ export interface VideoIdInfo {
 
 /**
  * 「暫存區」一列資料 —— 欄位順序即 Sheet 表頭順序,不要改順序。
- * 對應規格第五節 14 欄。
+ *
+ * 第一性原理瘦身(2026-06-20,14→8):暫存區只存「捕捉到的不可化約事實」,
+ * 衍生/診斷欄一律砍,智慧留下游(參考池/待拍/完成 + voc learn)。已砍:
+ * - ID(永遠 == VIDEO_ID)、AGE(衍生,今天−DATE 現算)、PLATFORM_ICON(衍生自 PLATFORM)
+ * - ERROR_LOG(永遠空,錯誤走 error chat/log)、PLATFORM_CONFIDENCE / DETECTION_METHOD(診斷,下游不消費)
+ * voc 按欄名讀 PLATFORM/VIDEO_REF/CLEAN_URL/DATE,皆保留 → 不受影響。
  */
 export interface StagingRow {
-  ID: string;
   PLATFORM: string;
   VIDEO_REF: string;
   DATE: string; // YYYY/M/D (Asia/Taipei)
-  AGE: string; // 距 DATE 的天數,寫入時為 "0"
   NOTE: string;
   CLEAN_URL: string;
-  VIDEO_ID: string;
+  VIDEO_ID: string; // 帶平台前綴的唯一 id,也是去重 key
   SENDER: string;
   STATUS: string; // active | moved | error
-  ERROR_LOG: string;
-  PLATFORM_ICON: string;
-  PLATFORM_CONFIDENCE: Confidence | "";
-  DETECTION_METHOD: DetectionMethod | "";
 }
 
 /** 「暫存區」表頭順序(SSOT)。googleSheets 與 doctor 都用這個。 */
 export const STAGING_COLUMNS: (keyof StagingRow)[] = [
-  "ID",
   "PLATFORM",
   "VIDEO_REF",
   "DATE",
-  "AGE",
   "NOTE",
   "CLEAN_URL",
   "VIDEO_ID",
   "SENDER",
   "STATUS",
-  "ERROR_LOG",
-  "PLATFORM_ICON",
-  "PLATFORM_CONFIDENCE",
-  "DETECTION_METHOD",
 ];
 
 export const STATUS = {

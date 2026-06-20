@@ -5,20 +5,14 @@ import type { StagingRow } from "../src/types.js";
 
 function row(videoId: string, status = "active"): StagingRow {
   return {
-    ID: videoId,
     PLATFORM: "TikTok",
     VIDEO_REF: `https://x/${videoId}`,
     DATE: "2026/6/20",
-    AGE: "0",
     NOTE: "",
     CLEAN_URL: `https://x/${videoId}`,
     VIDEO_ID: videoId,
     SENDER: "Pei",
     STATUS: status,
-    ERROR_LOG: "",
-    PLATFORM_ICON: "🎵",
-    PLATFORM_CONFIDENCE: "high",
-    DETECTION_METHOD: "domain_match",
   };
 }
 

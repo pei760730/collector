@@ -66,7 +66,8 @@ voc 的 `src/voc/sync.py`(指令 `voc sync-pool`)從**同一張表**讀「暫存
   - `VIDEO_REF` → 後備連結(CLEAN_URL 空時用)
   - `CLEAN_URL` → 連結(**voc 去重 key + 「打開」用**)
   - `DATE` → 加入日期(voc `normalize_date` 轉 ISO)
-- **bot 仍寫滿 14 欄沒問題**:voc 參考池現在 5 欄 = `id/平台/連結/挑/加入日期`(voc PR #7「砍狀態欄、改 checkbox 挑片」後;舊「狀態」欄已砍 —— 在池=還沒挑,勾「挑」→ `voc pick` 整列搬待拍、本列消失,所以不需狀態)。`VIDEO_ID/SENDER/NOTE` 等原始細節 voc **不再複製**,留在暫存區當原始底料(voc 設計如此,不是漏)。梗/點子改在 `pick` 時落地到「待拍.備註」。
+- **暫存區 2026-06-20 第一性原理瘦身 14→8 欄**:`PLATFORM/VIDEO_REF/DATE/NOTE/CLEAN_URL/VIDEO_ID/SENDER/STATUS`。砍掉衍生/診斷欄(ID≡VIDEO_ID、AGE、PLATFORM_ICON、ERROR_LOG、PLATFORM_CONFIDENCE、DETECTION_METHOD)——衍生值渲染時現算、智慧留下游。voc 按欄名讀 `PLATFORM/VIDEO_REF/CLEAN_URL/DATE`(皆保留)→ 不受影響。線上表用 `scripts/migrate-staging-cols.ts` 一次性遷移過。
+- **bot 寫的暫存區欄 voc 不全抄**:voc 參考池現在 5 欄 = `id/平台/連結/挑/加入日期`(voc PR #7「砍狀態欄、改 checkbox 挑片」後;舊「狀態」欄已砍 —— 在池=還沒挑,勾「挑」→ `voc pick` 整列搬待拍、本列消失,所以不需狀態)。`VIDEO_ID/SENDER/NOTE` 等原始細節 voc **不再複製**,留在暫存區當原始底料(voc 設計如此,不是漏)。梗/點子改在 `pick` 時落地到「待拍.備註」。
 - **Threads 兩端都支援(2026-06-20 對齊確認)**:voc `normalize._PLATFORM_RULES` 有 `threads.(net|com)` + `/post/(id)` 抽取,`parse_url` 認得;voc `_norm_platform("Threads")` 走 `.lower()` fallback → 參考池平台欄落 `threads`,與 voc 自身慣例一致。(脆弱點:voc `sync._PLATFORM_MAP` 沒明列 threads,靠 fallback 剛好對上;要硬化在 voc 補一行,屬可選、現在不壞。)
 - **`/pick` 打勾(bot 不自己搬待拍,2026-06-20)**:`/pick R####` 在「參考池」按 `id` 找列、把「**挑**」欄寫 `TRUE`,真正的搬移交回 `voc pick`。
   - **為什麼不在 bot 搬**:「參考池→待拍」是 voc pick 的不變式重活(T 號跨待拍+完成取 max、ISO 日期、先 append 後 delete、欄名漂移會炸);bot 重做=脆弱第二真相。bot 只寫一格,單一真相留 voc。
