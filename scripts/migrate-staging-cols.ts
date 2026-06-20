@@ -63,21 +63,40 @@ if (!EXECUTE) {
   process.exit(0);
 }
 
-// 1) 先寫新表頭+資料到 A1(覆蓋 A–H);critical data 先落地。
+// 0-based 欄索引 → A1 欄字母(0→A)。
+const colLetter = (i: number): string => {
+  let n = i,
+    s = "";
+  do {
+    s = String.fromCharCode((n % 26) + 65) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return s;
+};
+const lastNewCol = colLetter(newHeader.length - 1); // 新欄最後一欄
+const firstOrphanCol = colLetter(newHeader.length); // 新欄之後第一個殘留欄(動態,不寫死)
+
+// 1) 先寫新表頭+資料到 A1(覆蓋新欄段);critical data 先落地。
 await sheets.spreadsheets.values.update({
   spreadsheetId: SHEET_ID,
   range: range("A1"),
   valueInputOption: "RAW",
   requestBody: { values: [newHeader, ...newRows] },
 });
-console.log("✅ 已寫入新表頭 + 資料(A–H)。");
+console.log(`✅ 已寫入新表頭 + 資料(A–${lastNewCol})。`);
 
-// 2) 再清掉殘留舊欄(I 以後)。失敗也無害(bot 只讀到 H)。
-await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: range("I1:ZZ1000") });
-console.log("✅ 已清除殘留舊欄(I 以後)。");
+// 2) 再清掉殘留舊欄(新欄之後全清,動態算起點)。失敗也無害(bot 只讀到新欄末)。
+await sheets.spreadsheets.values.clear({
+  spreadsheetId: SHEET_ID,
+  range: range(`${firstOrphanCol}1:ZZ1000`),
+});
+console.log(`✅ 已清除殘留舊欄(${firstOrphanCol} 以後)。`);
 
-// 3) 反向讀回驗證。
-const back = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: range("A1:H") });
+// 3) 反向讀回驗證(只讀新欄段 + 多看一欄確認殘留已清乾淨)。
+const back = await sheets.spreadsheets.values.get({
+  spreadsheetId: SHEET_ID,
+  range: range(`A1:${firstOrphanCol}`),
+});
 const bv = (back.data.values ?? []).map((r) => r.map((c) => String(c ?? "")));
 console.log("\n讀回驗證:");
 console.log("  表頭:", (bv[0] ?? []).join(" | "));
