@@ -18,7 +18,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 **預設不碰(Claude Code / Owner 的領域):**
 - **Live bot 操作 / Sheet 實際寫入**(真的啟動 bot 收訊息、`STORAGE=sheets` 跑真表)
-- **與 voc 的對接契約**(`CLAUDE.md` §6 的暫存區欄位:`PLATFORM/VIDEO_REF/CLEAN_URL/DATE`)—— 改欄名要兩 repo 一起,屬跨 repo 協調
+- **與 voc 的對接契約**(`CLAUDE.md` §6 的暫存區欄位:voc 按表頭名讀 `PLATFORM/CLEAN_URL/DATE` 3 欄)—— 改欄名要兩 repo 一起,屬跨 repo 協調
 - **schema 設計判斷**(`STAGING_COLUMNS` 加/砍欄、平台規則、去重策略的大方向)
 - `service_account.json`、`.env`(機密)
 
@@ -60,7 +60,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 ```bash
 npm run typecheck     # tsc(含 tests),不可有型別錯
-npm test              # Vitest 全綠(pipeline 純函式 + collect/move 整合)
+npm test              # Vitest 全綠(pipeline 純函式 + collect/pick/router/prune 整合)
 npm run build         # tsc 出 dist/index.js(Dockerfile CMD 依賴它)
 ```
 

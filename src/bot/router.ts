@@ -1,6 +1,6 @@
 /**
  * Telegraf 指令路由 —— 把指令對到 handler,集中錯誤處理。
- * 指令解析框架留好:/stats、/move、一般訊息。新指令在這裡掛。
+ * 指令解析框架留好:/stats、/pick、一般訊息。新指令在這裡掛。
  */
 import { Telegraf, type Context } from "telegraf";
 import { message } from "telegraf/filters";
@@ -120,7 +120,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
   return bot;
 }
 
-/** 取指令參數:`/move abc` → `abc`。 */
+/** 取指令參數:`/pick R1990` → `R1990`。 */
 function commandArg(ctx: Context, command: string): string {
   const text =
     ctx.message && "text" in ctx.message ? (ctx.message.text as string) : "";

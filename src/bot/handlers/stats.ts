@@ -1,6 +1,6 @@
 /**
  * /stats handler。預設版(邊做邊修):
- * 總筆數 + 各平台筆數 + 本週/本月新增 + 狀態分布 + 最近 5 筆。
+ * 總筆數 + 各平台筆數 + 本週/本月新增 + 最近 5 筆。
  */
 import type { Storage } from "../../storage/Storage.js";
 import type { Platform } from "../../types.js";
