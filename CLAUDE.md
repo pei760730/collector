@@ -25,7 +25,7 @@
 | Google Sheets 實作 | `src/storage/googleSheets.ts` |
 | 測試用記憶體 storage | `src/storage/memory.ts` |
 | 收集流程 handler | `src/bot/handlers/collect.ts`(`runCollect`,不依賴 Telegraf) |
-| `/stats` `/move` | `src/bot/handlers/{stats,move}.ts` |
+| `/stats` / `/pick` handler | `src/bot/handlers/{stats,pick}.ts`;`/pick` 打勾參考池 `src/storage/poolPick.ts` |
 | 指令路由 / 錯誤通知 | `src/bot/router.ts` |
 | 訊息模板 | `src/messages/templates.ts` |
 | 設定 / 環境變數 | `src/config.ts`(範本 `.env.example`) |
@@ -51,8 +51,8 @@
 
 ## 第五層:待確認(邊做邊修)
 
-- `/stats` 顯示哪些數字 —— 現為預設版(總筆數+各平台+本週/本月+狀態+最近5筆)。
-- `/move` 行為 —— 現為「改 STATUS active→moved、不搬表」。要加「正式區」分頁時改 `handlers/move.ts` + storage。
+- `/stats` 顯示哪些數字 —— 現為預設版(總筆數+各平台+本週/本月+最近5筆;STATUS 退役後不再有狀態分布)。
+- `/move` 已退役(隨第二輪瘦身砍 STATUS 欄一起;`move.ts` 已刪)。改用 `/pick` 打勾流程,詳見第六層。
 - 短網址展開(`EXPAND_SHORT_URLS`)預設關;要開再驗 redirect 行為。
 
 ## 第六層:與 voc 對接契約(改欄位前先讀!跨 repo)
