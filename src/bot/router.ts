@@ -11,7 +11,13 @@ import { runStats } from "./handlers/stats.js";
 import { runMove } from "./handlers/move.js";
 import { logger } from "../utils/logger.js";
 
-export function createBot(config: Config, storage: Storage): Telegraf {
+/** drain 模式注入的鉤子;常駐版不傳(undefined)。 */
+export interface BotHooks {
+  /** 某筆寫入暫存區失敗時呼叫(drain 用來停在當前 offset、不 ack)。 */
+  onPersistError?: () => void;
+}
+
+export function createBot(config: Config, storage: Storage, hooks?: BotHooks): Telegraf {
   const bot = new Telegraf(config.telegramToken);
 
   const notifyError = async (text: string) => {
@@ -66,6 +72,7 @@ export function createBot(config: Config, storage: Storage): Telegraf {
           storage,
           dedupePeriodDays: config.dedupePeriodDays,
           expandShortUrls: config.expandShortUrls,
+          onPersistError: hooks?.onPersistError,
         },
       );
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,

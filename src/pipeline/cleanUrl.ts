@@ -41,6 +41,10 @@ const SHORT_URL_HOSTS = new Set([
   "buff.ly",
   "t.co",
   "short.link",
+  // TikTok 短連結:無 /video/<id>,不展開的話跟長連結算出不同去重 key → 漏去重。
+  // EXPAND_SHORT_URLS=true 時展開成正規 /video/ 連結;展開失敗會優雅退回原值(不會更糟)。
+  "vm.tiktok.com",
+  "vt.tiktok.com",
 ]);
 
 /** 是否為已知短網址服務(供 collect 決定要不要展開)。 */

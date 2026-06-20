@@ -16,6 +16,7 @@ concurrency:
 jobs:
   drain:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # 保險:任何意外卡死 10 分鐘殺掉,別吃滿 6h 額度、堵住後續 cron
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -31,6 +32,9 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           STORAGE: sheets
+          # cron 無人等候,展開 TikTok 等短連結→正規連結,讓短/長連結去重一致。
+          # 展開失敗會優雅退回原值(不會更糟)。
+          EXPAND_SHORT_URLS: "true"
           # 寫表失敗時的 Telegram 告警對象(chat id 非機密,已公開於 .env.example)。
           # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
           ERROR_CHAT_ID: "-48214680"

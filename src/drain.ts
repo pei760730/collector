@@ -36,7 +36,14 @@ async function main(): Promise<void> {
   }
   await storage.ensureHeader();
 
-  const bot = createBot(config, storage);
+  // persistFailed:某筆寫入暫存區失敗(可重試)的 side-channel 旗標。每筆處理前歸零,
+  // handleUpdate 內若觸發 onPersistError 會翻 true → 該筆「沒持久化」,不能 ack。
+  let persistFailed = false;
+  const bot = createBot(config, storage, {
+    onPersistError: () => {
+      persistFailed = true;
+    },
+  });
   // handleUpdate 要 botInfo 才能正確解析群組內的 /command@botname;先抓好(launch 平時會做)。
   bot.botInfo = await bot.telegram.getMe();
   // 確保沒有殘留 webhook(否則 getUpdates 回 409 Conflict);保留待領更新不丟。
@@ -44,28 +51,40 @@ async function main(): Promise<void> {
 
   let offset = 0;
   let processed = 0;
-  for (;;) {
+  let aborted = false;
+  outer: for (;;) {
     // timeout=0 → 不長等:有就回、沒有立刻回空(一次性語意,不要 block 住 Actions)。
     const updates = await bot.telegram.getUpdates(0, 100, offset, undefined);
     if (updates.length === 0) break;
     for (const u of updates) {
+      persistFailed = false;
       try {
         await bot.handleUpdate(u);
       } catch (err) {
-        logger.error(`處理 update ${u.update_id} 失敗(跳過,下次重領)`, err);
+        // 解析/路由層的非預期例外(非寫入失敗):這類重領也沒用,記錄後跳過。
+        logger.error(`處理 update ${u.update_id} 例外(跳過)`, err);
       }
-      offset = u.update_id + 1; // 帶到下一輪 getUpdates 即 ack 本批
+      if (persistFailed) {
+        // 寫入失敗(可重試):不前進 offset、結束整個 drain。前面成功的那段下次 cron 的
+        // 第一次 getUpdates(offset) 會 ack;這筆與之後的會被重領,靠 storage VIDEO_ID 去重。
+        // 這樣才真正 at-least-once,不會把沒寫成功的訊息默默 ack 掉(CLAUDE.md 紅線)。
+        logger.error(`update ${u.update_id} 寫入暫存區失敗 → 停在此 offset,結束本輪讓下次 cron 重領`);
+        aborted = true;
+        break outer;
+      }
+      offset = u.update_id + 1; // 帶到下一輪 getUpdates 即 ack 本批(累積語意)
       processed += 1;
     }
   }
-  // 迴圈以空批結束時,最後一次 getUpdates(offset) 已 ack;這行只在「處理過但迴圈剛好
-  // 沒再多領一輪」的邊角補一次 ack,確保下回 cron 不重領。offset===0 表示沒更新,免呼叫。
-  if (offset > 0) await bot.telegram.getUpdates(0, 1, offset, undefined);
+  // 正常結束時最後一次「空批」getUpdates(offset) 已 ack 最後一批,不需額外補 ack。
+  // 中止結束時刻意不 ack 未處理段,留給下次 cron 重領。
 
-  logger.info(`drain 完成:處理 ${processed} 筆更新`);
+  logger.info(`drain ${aborted ? "中止(寫入失敗,部分未處理)" : "完成"}:已處理 ${processed} 筆更新`);
 }
 
-main().catch((err) => {
-  logger.error("drain 失敗", err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0)) // 顯式退出:避免 telegraf/gaxios 殘留 keep-alive handle 讓 Actions job 卡到 timeout
+  .catch((err) => {
+    logger.error("drain 失敗", err);
+    process.exit(1);
+  });
