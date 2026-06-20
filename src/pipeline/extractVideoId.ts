@@ -38,7 +38,8 @@ const YOUTUBE_PATTERNS = [
   /\/embed\/([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/,
   /\/live\/([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/,
 ];
-const XHS_PATTERNS = [/\/explore\/([a-zA-Z0-9]+)/];
+// 小紅書筆記兩種正規路徑:/explore/<id> 與 /discovery/item/<id>(分享連結常見後者)。
+const XHS_PATTERNS = [/\/explore\/([a-zA-Z0-9]+)/, /\/discovery\/item\/([a-zA-Z0-9]+)/];
 const THREADS_PATTERNS = [/\/post\/([a-zA-Z0-9_-]+)/];
 
 export function extractVideoId(

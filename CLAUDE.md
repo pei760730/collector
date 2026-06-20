@@ -33,6 +33,7 @@
 ## 第三層:技術不變式
 
 - **pipeline 全純函式**:parse / cleanUrl / detectPlatform / extractVideoId 無副作用、無網路,I/O 隔在 storage + handler。改邏輯先補 / 改 `tests/`。
+- **測 router(telegraf)的攔截點**:telegraf `handleUpdate` **每筆更新都 `new Telegram(...)`**(telegraf.js),所以 stub `bot.telegram.sendMessage` / `.callApi` 對 context 無效(ctx 拿的是新實例)。要攔回覆/避免真連線,改 stub `Telegram.prototype.callApi`(測完還原)。範例見 `tests/router.test.ts`。
 - **時區固定 `Asia/Taipei`**(`src/utils/date.ts`),DATE 欄格式 `YYYY/M/D`(不補零,沿用 n8n moment 行為)。
 - **寫入一律 RAW**(不用 USER_ENTERED),避免 video ID / 開頭 0 被吃成數字。
 - **訊息純文字**,不用 MarkdownV2(舊版跳脫漏字會發送失敗)。

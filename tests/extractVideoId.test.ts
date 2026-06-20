@@ -75,6 +75,12 @@ describe("extractVideoId", () => {
     ).toBe("xhs_abc123");
   });
 
+  it("小紅書 /discovery/item/<id>", () => {
+    expect(
+      extractVideoId("小紅書", "https://www.xiaohongshu.com/discovery/item/def456").videoId,
+    ).toBe("xhs_def456");
+  });
+
   it("Facebook 無抽取規則 → unknown + unsupported", () => {
     const r = extractVideoId("Facebook", "https://fb.watch/xyz", FIXED);
     expect(r.unsupported).toBe(true);

@@ -71,7 +71,6 @@ export interface Config {
     /** voc 的「參考池」分頁名(同一張表);/pick 打勾用。 */
     poolSheetName: string;
   } | null;
-  adminChatId: string;
   errorChatId: string;
   dedupePeriodDays: number;
   expandShortUrls: boolean;
@@ -142,7 +141,6 @@ export function loadConfig(): Config {
       port: numEnv("PORT", 8080, { min: 1 }),
     },
     google,
-    adminChatId: optional("ADMIN_CHAT_ID", ""),
     errorChatId: optional("ERROR_CHAT_ID", ""),
     dedupePeriodDays: numEnv("DEDUPE_PERIOD_DAYS", 180, { min: 0 }),
     expandShortUrls: boolEnv("EXPAND_SHORT_URLS", false),
