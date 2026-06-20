@@ -28,6 +28,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 - **Codex**:在 branch 上做可審查工程變更(code/tests/CI/Docker)、跑驗證、整理 commit/PR。
 - 跨領域任務:用下方 Handoff 格式交回 Claude Code 判斷,handoff 保持窄。
 - 誰最後改 code,誰在回報講清楚改了什麼、跑了哪些驗證、還剩哪些風險;不要假設對方已知上下文。
+- **同目錄同時只一個 active agent**:Claude 跟 Codex 共用同一個 working tree。動手前先 `git fetch` 看 `origin/main` 有沒有被對方推進;**不要兩邊同時改同一個檔**。真要並行,各開 `git worktree`(各自獨立 HEAD/index),別擠同一個工作目錄 —— 否則 commit/push 會互踩 ref。(踩過:HEAD 被對方 `checkout` 切走、改動變成別人 branch 的 uncommitted、push 推錯 ref。)
 
 ## 硬規則(= `CLAUDE.md` §1 永久紅線,違反就停)
 
@@ -37,6 +38,17 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 4. **修 bug 前先想能不能用 schema / 設定 / 純函式 / 型別擋掉**,寫新 code 是最後手段。n8n 搬來的 regex 邏輯要 1:1 保留,別憑印象重寫跑掉行為。
 5. **不編造 Sheet 沒有的事實**;碰 Sheet 寫入只能 dry-run / `STORAGE=memory`,真寫(`STORAGE=sheets` 跑真表、`sync` 對接)要 Owner 明確同意,寫入後**獨立讀回確認**。
 6. **pipeline 全純函式**:parse / cleanUrl / detectPlatform / extractVideoId 無副作用、無網路;改邏輯先補 / 改 `tests/`。
+
+## 開工前(每次 task:base-check + 分支)
+
+1. **從最新 main 開分支**,別在舊 base 動手(擋 stale-base 重做):
+   ```bash
+   git fetch origin 2>/dev/null && git checkout -B codex/<task-name> origin/main \
+     || { git log --oneline -3; echo "無 origin(Codex sandbox)→ 確認 HEAD 是任務指定 base 才繼續"; }
+   git rev-parse --short HEAD          # 回報 base sha,PR body 記一行 Base: <sha>
+   ```
+   - Codex sandbox 沒 `origin`(見下 quirks)→ fetch 失敗走本地:確認 `HEAD` 是任務指定 sha 才動手,否則 STOP 回報。
+2. **分支前綴一律 `codex/<task>`** —— 一眼可辨是 Codex 開的、好追責。Claude 用 `claude/*`,Owner 直接開 feature branch。
 
 ## PR 流程(走 PR,單主題)
 
