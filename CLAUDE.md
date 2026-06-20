@@ -66,7 +66,7 @@ voc 的 `src/voc/sync.py`(指令 `voc sync-pool`)從**同一張表**讀「暫存
   - `PLATFORM` → 平台(voc `_PLATFORM_MAP` 轉小寫)
   - `CLEAN_URL` → 連結(**voc 去重 key + 「打開」用**)
   - `DATE` → 加入日期(voc `normalize_date` 轉 ISO)
-  - ⚠️ voc `sync.py:98` 還有 `or get(raw,"VIDEO_REF")` 後備,但 bot 已砍 VIDEO_REF → 該後備永遠拿到 ""(CLEAN_URL 必有值,無妨)。**voc 端清掉這行死碼是 follow-up(另開 voc session)**。
+  - ✅ voc 端已清掉舊 `or get(raw,"VIDEO_REF")` 後備死碼(voc PR #10,2026-06-20;test 釘住、design.md 同步於 voc PR #12)。sync 現只依賴上述 3 欄,無 VIDEO_REF 相依。
 - **暫存區第一性原理瘦身(2026-06-20,14→8→5)**:現 **5 欄** `PLATFORM/DATE/NOTE/CLEAN_URL/VIDEO_ID`。
   - 第一輪砍衍生/診斷:ID(≡VIDEO_ID)、AGE、PLATFORM_ICON、ERROR_LOG、PLATFORM_CONFIDENCE、DETECTION_METHOD。
   - 第二輪砍過時/單人無值:STATUS(連 `/move` 一起退役,voc 不讀)、SENDER(永遠 Pei)、VIDEO_REF(voc 後備幾乎不觸發)。
