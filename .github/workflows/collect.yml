@@ -31,3 +31,6 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           STORAGE: sheets
+          # 寫表失敗時的 Telegram 告警對象(chat id 非機密,已公開於 .env.example)。
+          # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
+          ERROR_CHAT_ID: "-48214680"

@@ -29,13 +29,17 @@ function boolEnv(name: string, fallback: boolean): boolean {
   return ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
 }
 
-/** 數字環境變數;打錯成非數字直接丟錯(fail-fast,不要默默 NaN)。 */
-function numEnv(name: string, fallback: number): number {
+/** 數字環境變數;打錯成非數字 / 低於下限直接丟錯(fail-fast,不要默默 NaN 或負值)。 */
+function numEnv(name: string, fallback: number, opts: { min?: number } = {}): number {
   const v = process.env[name];
   if (v == null || v.trim() === "") return fallback;
   const n = Number(v.trim());
   if (!Number.isFinite(n)) {
     throw new Error(`環境變數 ${name} 不是合法數字:'${v}'`);
+  }
+  if (opts.min != null && n < opts.min) {
+    // 例:DEDUPE_PERIOD_DAYS 設負數會讓「ageInDays > 負數」恆真 → 去重整個失效。
+    throw new Error(`環境變數 ${name} 不可小於 ${opts.min}:'${v}'`);
   }
   return n;
 }
@@ -133,12 +137,12 @@ export function loadConfig(): Config {
     webhook: {
       domain: optional("WEBHOOK_DOMAIN", ""),
       path: optional("WEBHOOK_PATH", "/telegraf"),
-      port: numEnv("PORT", 8080),
+      port: numEnv("PORT", 8080, { min: 1 }),
     },
     google,
     adminChatId: optional("ADMIN_CHAT_ID", ""),
     errorChatId: optional("ERROR_CHAT_ID", ""),
-    dedupePeriodDays: numEnv("DEDUPE_PERIOD_DAYS", 180),
+    dedupePeriodDays: numEnv("DEDUPE_PERIOD_DAYS", 180, { min: 0 }),
     expandShortUrls: boolEnv("EXPAND_SHORT_URLS", false),
     tz: optional("TZ", "Asia/Taipei"),
     logLevel: optional("LOG_LEVEL", "info"),

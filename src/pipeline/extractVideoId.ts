@@ -22,8 +22,10 @@ function firstMatch(url: string, patterns: RegExp[]): string | null {
 const TIKTOK_PATTERNS = [
   /video\/(\d+)/,
   /item_id=(\d+)/,
-  /discover\/(.*?)\?/,
-  /(\d{19})/,
+  // 只認「路徑段」的 19 位純數字 video id(如 vt.tiktok.com/<19位>):前面要有 `/`、
+  // 後面不接數字。否則 ?sec_uid=<19位>(query)、20 位數字截前 19 位 會被偽造成假影片 id。
+  // discover/ 搜尋頁不是影片,移除其規則 → 落到 unknown_*/unsupported,不混進真影片。
+  /\/(\d{19})(?!\d)/,
 ];
 const INSTAGRAM_PATTERNS = [/\/(p|reel)\/([a-zA-Z0-9_-]+)/];
 // 只認真正帶影片 id 的形態 —— 不要用裸 `/([11])`,否則 /channel/UC… 之類會被誤抓。

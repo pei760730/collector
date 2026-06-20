@@ -79,4 +79,21 @@ describe("extractVideoId", () => {
     expect(extractVideoId("YouTube", "https://www.youtube.com/channel/UCabcdefghij", FIXED).unsupported).toBe(true);
     expect(extractVideoId("YouTube", "https://www.youtube.com/@someuser11", FIXED).unsupported).toBe(true);
   });
+
+  it("TikTok ?sec_uid=<19位> 不該被偽造成影片 id", () => {
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/@u?sec_uid=1234567890123456789", FIXED);
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("unknown_1700000000000");
+  });
+
+  it("TikTok 20 位數字不該截前 19 位當 id", () => {
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/x/12345678901234567890", FIXED);
+    expect(r.unsupported).toBe(true);
+  });
+
+  it("TikTok discover 搜尋頁(帶 ?)不是影片 → unsupported", () => {
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/discover/funny?lang=en", FIXED);
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("unknown_1700000000000");
+  });
 });
