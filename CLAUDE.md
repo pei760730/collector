@@ -76,7 +76,7 @@ voc 的 `src/voc/sync.py`(指令 `voc sync-pool`)從**同一張表**讀「暫存
 - **`/pick` 打勾(bot 不自己搬待拍,2026-06-20)**:`/pick R####` 在「參考池」按 `id` 找列、把「**挑**」欄寫 `TRUE`,真正的搬移交回 `voc pick`。
   - **為什麼不在 bot 搬**:「參考池→待拍」是 voc pick 的不變式重活(T 號跨待拍+完成取 max、ISO 日期、先 append 後 delete、欄名漂移會炸);bot 重做=脆弱第二真相。bot 只寫一格,單一真相留 voc。
   - **耦合點(改任一個要兩 repo 一起)**:欄名 `id`、`挑`(= voc `schema.PICK_COL`);打勾值寫 `TRUE`(voc `_is_checked` 認 `TRUE/✓/V/Y/1/X/是`)。bot 端在 `src/storage/poolPick.ts`。
-  - **待補(voc 端,另開 voc session)**:把 `voc pick --execute` 排進 voc 每日 cron,打勾才會自動搬;否則要手動跑 `voc pick`。
+  - **✅ 已完成(voc 端)**:`voc pick --execute` 已排進 voc 每日 cron(`daily.yml`:doctor→sync-pool→**pick**→snapshot),打勾隔天自動搬待拍,不需手動跑(voc CLAUDE.md §5 / README 同步於 voc PR #13)。
 - **去重**:voc `_dedup_key` 優先用 `parse_url` 抽「平台:影片id」當 key(抽不到才退乾淨連結路徑:砍 query/fragment + 去尾斜線 + lower)。冪等,重跑 sync 不重複。bot 端去重(暫存區用 VIDEO_ID)與 voc 端(參考池用連結 key)各自獨立,前綴格式(`threads_`/`threads:`)不需一致。
 - **✅ 原 youtube `watch?v=` 去重 edge 已修(voc PR #5 merged,2026-06-20)**:`_dedup_key` 改抽「平台:影片id」,`watch?v=AAA` 與 `watch?v=BBB` 不再砍 query 後塌成重複;同支影片的 `youtu.be/`、`shorts/`、`watch?v=` 反而收斂同 key。**改 voc 一律另開 voc session**,別從 bot 滑上游。
 - 驗證腳本:`npx tsx scripts/verify-sheet.ts`(列分頁)、`scripts/read-staging.ts`(讀暫存區)、`scripts/read-refs.ts`(讀參考池)。
