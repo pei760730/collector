@@ -80,6 +80,18 @@ async function main(): Promise<void> {
   // 中止結束時刻意不 ack 未處理段,留給下次 cron 重領。
 
   logger.info(`drain ${aborted ? "中止(寫入失敗,部分未處理)" : "完成"}:已處理 ${processed} 筆更新`);
+
+  // 清窗外舊列:暫存區是 append-only,不清會無限長。去重本來就忽略窗外列(age > 窗),
+  // 刪掉不影響去重(DATE 壞掉的列 prune 也保留,與去重一致)。prune 是清理、非關鍵路徑,
+  // 失敗只記 error 不讓整個 drain 崩(這輪更新已成功入庫)。
+  try {
+    const pruned = await storage.pruneOlderThan(config.dedupePeriodDays);
+    if (pruned > 0) {
+      logger.info(`prune:刪除 ${pruned} 筆窗外(>${config.dedupePeriodDays} 天)舊列`);
+    }
+  } catch (err) {
+    logger.error("prune 失敗(忽略,不影響本輪 drain 已入庫的更新)", err);
+  }
 }
 
 main()

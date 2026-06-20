@@ -49,4 +49,17 @@ export class MemoryStorage implements Storage {
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {
     return computeStats(this.rows, opts);
   }
+
+  async pruneOlderThan(days: number, opts?: { dryRun?: boolean }): Promise<number> {
+    // 窗外 = 年齡有限且 > days。Infinity(DATE 解析不出)一律保留,與去重一致。
+    const isVictim = (r: StagingRow): boolean => {
+      const age = ageInDays(r.DATE);
+      return Number.isFinite(age) && age > days;
+    };
+    const count = this.rows.filter(isVictim).length;
+    if (!opts?.dryRun && count > 0) {
+      this.rows = this.rows.filter((r) => !isVictim(r));
+    }
+    return count;
+  }
 }

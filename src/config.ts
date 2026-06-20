@@ -142,7 +142,7 @@ export function loadConfig(): Config {
     },
     google,
     errorChatId: optional("ERROR_CHAT_ID", ""),
-    dedupePeriodDays: numEnv("DEDUPE_PERIOD_DAYS", 180, { min: 0 }),
+    dedupePeriodDays: numEnv("DEDUPE_PERIOD_DAYS", 14, { min: 0 }),
     expandShortUrls: boolEnv("EXPAND_SHORT_URLS", false),
     logLevel: optional("LOG_LEVEL", "info"),
   };
