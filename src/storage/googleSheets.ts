@@ -226,4 +226,58 @@ export class GoogleSheetsStorage implements Storage {
     const rows = await this.readAll();
     return computeStats(rows, opts);
   }
+
+  /** 取本分頁的數字 sheetId(gid),deleteDimension 需要它(range 字串不行)。 */
+  private async getSheetGid(): Promise<number> {
+    const meta = await withRetry("取分頁 gid", () =>
+      this.sheets.spreadsheets.get({
+        spreadsheetId: this.sheetId,
+        fields: "sheets.properties(title,sheetId)",
+      }),
+    );
+    const sheet = (meta.data.sheets ?? []).find(
+      (s) => s.properties?.title === this.sheetName,
+    );
+    const gid = sheet?.properties?.sheetId;
+    if (gid == null) throw new Error(`找不到分頁 ${this.sheetName} 的 sheetId`);
+    return gid;
+  }
+
+  async pruneOlderThan(days: number, opts?: { dryRun?: boolean }): Promise<number> {
+    const dateIdx = STAGING_COLUMNS.indexOf("DATE");
+    // 用既有 rawRows():帶正確實體列號、空白列已跳過。
+    const victims = (await this.rawRows()).filter((r) => {
+      const age = ageInDays(r.cells[dateIdx] ?? "");
+      // 窗外 = 年齡有限且 > days。Infinity(DATE 解析不出)一律保留(與去重一致)。
+      return Number.isFinite(age) && age > days;
+    });
+    if (opts?.dryRun || victims.length === 0) return victims.length;
+
+    const gid = await this.getSheetGid();
+    // rowNumber(1-based,含表頭)→ 0-based dimension index。把連續列合併成區段,
+    // 再「由下往上」刪(startIndex 大的先刪)—— 刪一段不會位移它上面的列號,故捕捉到的
+    // 實體列號全程有效,不會刪一列後位移誤刪。
+    const idxAsc = victims.map((v) => v.rowNumber - 1).sort((a, b) => a - b);
+    const ranges: { start: number; end: number }[] = []; // [start, end) 半開
+    for (const i of idxAsc) {
+      const last = ranges[ranges.length - 1];
+      if (last && i === last.end) last.end = i + 1; // 接續 → 延長區段
+      else ranges.push({ start: i, end: i + 1 });
+    }
+    ranges.sort((a, b) => b.start - a.start); // 由下往上
+
+    await withRetry("prune 刪列", () =>
+      this.sheets.spreadsheets.batchUpdate({
+        spreadsheetId: this.sheetId,
+        requestBody: {
+          requests: ranges.map((r) => ({
+            deleteDimension: {
+              range: { sheetId: gid, dimension: "ROWS", startIndex: r.start, endIndex: r.end },
+            },
+          })),
+        },
+      }),
+    );
+    return victims.length;
+  }
 }

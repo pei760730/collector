@@ -39,4 +39,13 @@ export interface Storage {
 
   /** 統計(供 /stats)。 */
   stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary>;
+
+  /**
+   * 清掉「窗外」舊列(暫存區是 append-only,不清會無限長)。
+   * 只刪「年齡為**有限值**且 > days」的列;DATE 解析不出(ageInDays=Infinity)的列**一律保留** ——
+   * 必須與去重邏輯一致(去重對 Infinity 視為「不可略過、仍存在」),否則同 VIDEO_ID 但 DATE
+   * 壞掉的列會被誤刪後重寫。窗外列 bot 去重本來就忽略(age > withinDays → 跳過),刪掉不影響去重。
+   * dryRun=true 時只回「會刪幾筆」不真刪。回傳刪除(或將刪)筆數。
+   */
+  pruneOlderThan(days: number, opts?: { dryRun?: boolean }): Promise<number>;
 }
