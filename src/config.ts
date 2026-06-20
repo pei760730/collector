@@ -68,6 +68,8 @@ export interface Config {
     credentials: { client_email: string; private_key: string };
     sheetId: string;
     stagingSheetName: string;
+    /** voc 的「參考池」分頁名(同一張表);/pick 打勾用。 */
+    poolSheetName: string;
   } | null;
   adminChatId: string;
   errorChatId: string;
@@ -128,6 +130,7 @@ export function loadConfig(): Config {
           credentials: loadGoogleCredentials(),
           sheetId: required("GOOGLE_SHEET_ID"),
           stagingSheetName: optional("STAGING_SHEET_NAME", "暫存區"),
+          poolSheetName: optional("POOL_SHEET_NAME", "參考池"),
         };
   cached = {
     telegramToken: required("TELEGRAM_BOT_TOKEN"),
