@@ -29,7 +29,7 @@ export function successMsg(row: StagingRow, opts: { unsupported: boolean; isShor
     `VIDEO_ID:${row.VIDEO_ID}`,
   ];
   if (row.NOTE) lines.push(`備註:${row.NOTE}`);
-  lines.push(`提交者:${row.SENDER}　日期:${row.DATE}`);
+  lines.push(`日期:${row.DATE}`);
   if (opts.unsupported) {
     // fallback 猜平台時 video id 也抓不到 → unsupported,此訊息已涵蓋「可能不準」。
     lines.push("⚠️ 這個平台抓不到 video ID,先以 unknown 收錄。");
@@ -44,7 +44,7 @@ export function duplicateMsg(existing: StagingRow): string {
   return [
     "♻️ 這支已經收過了,沒有重複寫入。",
     `VIDEO_ID:${existing.VIDEO_ID}`,
-    `首次提交:${existing.DATE}　by ${existing.SENDER || "unknown"}`,
+    `首次提交:${existing.DATE}`,
     existing.NOTE ? `當時備註:${existing.NOTE}` : "",
   ]
     .filter(Boolean)

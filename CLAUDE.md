@@ -61,12 +61,15 @@ voc 的 `src/voc/sync.py`(指令 `voc sync-pool`)從**同一張表**讀「暫存
 
 - **同一張表**:bot `GOOGLE_SHEET_ID` 必須 = voc `VOC_SPREADSHEET_ID`(`1V_CaTb…`)。憑證共用 voc 的 `service_account.json`(`voc-sheets@voc-499914`)。
 - **bot 自建暫存區分頁**:voc `init-sheet` 不建「暫存區」,由 bot `GoogleSheetsStorage.ensureHeader` 啟動時自建(addSheet + 表頭)。
-- **契約欄位(以 voc `sync.py` 當前讀的為準,2026-06-20)**:voc 精簡後**只按表頭名讀這 4 欄**,改這幾欄名要兩 repo 一起改:
-  - `PLATFORM` → 平台(voc `_PLATFORM_MAP` 轉小寫;7 個顯示名都對得上)
-  - `VIDEO_REF` → 後備連結(CLEAN_URL 空時用)
+- **契約欄位(以 voc `sync.py` 當前讀的為準,2026-06-20)**:voc **只按表頭名讀這 3 欄**,改名要兩 repo 一起改:
+  - `PLATFORM` → 平台(voc `_PLATFORM_MAP` 轉小寫)
   - `CLEAN_URL` → 連結(**voc 去重 key + 「打開」用**)
   - `DATE` → 加入日期(voc `normalize_date` 轉 ISO)
-- **暫存區 2026-06-20 第一性原理瘦身 14→8 欄**:`PLATFORM/VIDEO_REF/DATE/NOTE/CLEAN_URL/VIDEO_ID/SENDER/STATUS`。砍掉衍生/診斷欄(ID≡VIDEO_ID、AGE、PLATFORM_ICON、ERROR_LOG、PLATFORM_CONFIDENCE、DETECTION_METHOD)——衍生值渲染時現算、智慧留下游。voc 按欄名讀 `PLATFORM/VIDEO_REF/CLEAN_URL/DATE`(皆保留)→ 不受影響。線上表用 `scripts/migrate-staging-cols.ts` 一次性遷移過。
+  - ⚠️ voc `sync.py:98` 還有 `or get(raw,"VIDEO_REF")` 後備,但 bot 已砍 VIDEO_REF → 該後備永遠拿到 ""(CLEAN_URL 必有值,無妨)。**voc 端清掉這行死碼是 follow-up(另開 voc session)**。
+- **暫存區第一性原理瘦身(2026-06-20,14→8→5)**:現 **5 欄** `PLATFORM/DATE/NOTE/CLEAN_URL/VIDEO_ID`。
+  - 第一輪砍衍生/診斷:ID(≡VIDEO_ID)、AGE、PLATFORM_ICON、ERROR_LOG、PLATFORM_CONFIDENCE、DETECTION_METHOD。
+  - 第二輪砍過時/單人無值:STATUS(連 `/move` 一起退役,voc 不讀)、SENDER(永遠 Pei)、VIDEO_REF(voc 後備幾乎不觸發)。
+  - 衍生值(icon)渲染時 `PLATFORM_ICON[平台]` 現算;智慧/迴圈留下游(完成表+voc learn)。線上表用 `scripts/migrate-staging-cols.ts --execute` 遷移(讀回驗證)。
 - **bot 寫的暫存區欄 voc 不全抄**:voc 參考池現在 5 欄 = `id/平台/連結/挑/加入日期`(voc PR #7「砍狀態欄、改 checkbox 挑片」後;舊「狀態」欄已砍 —— 在池=還沒挑,勾「挑」→ `voc pick` 整列搬待拍、本列消失,所以不需狀態)。`VIDEO_ID/SENDER/NOTE` 等原始細節 voc **不再複製**,留在暫存區當原始底料(voc 設計如此,不是漏)。梗/點子改在 `pick` 時落地到「待拍.備註」。
 - **Threads 兩端都支援(2026-06-20 對齊確認)**:voc `normalize._PLATFORM_RULES` 有 `threads.(net|com)` + `/post/(id)` 抽取,`parse_url` 認得;voc `_norm_platform("Threads")` 走 `.lower()` fallback → 參考池平台欄落 `threads`,與 voc 自身慣例一致。(脆弱點:voc `sync._PLATFORM_MAP` 沒明列 threads,靠 fallback 剛好對上;要硬化在 voc 補一行,屬可選、現在不壞。)
 - **`/pick` 打勾(bot 不自己搬待拍,2026-06-20)**:`/pick R####` 在「參考池」按 `id` 找列、把「**挑**」欄寫 `TRUE`,真正的搬移交回 `voc pick`。

@@ -222,18 +222,6 @@ export class GoogleSheetsStorage implements Storage {
     );
   }
 
-  async updateStatus(rowNumber: number, status: string): Promise<void> {
-    const statusCol = colLetter(STAGING_COLUMNS.indexOf("STATUS"));
-    await withRetry("updateStatus", () =>
-      this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.sheetId,
-        range: this.range(`${statusCol}${rowNumber}`),
-        valueInputOption: "RAW",
-        requestBody: { values: [[status]] },
-      }),
-    );
-  }
-
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {
     const rows = await this.readAll();
     return computeStats(rows, opts);

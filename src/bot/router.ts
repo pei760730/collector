@@ -8,7 +8,6 @@ import type { Config } from "../config.js";
 import type { Storage } from "../storage/Storage.js";
 import { runCollect } from "./handlers/collect.js";
 import { runStats } from "./handlers/stats.js";
-import { runMove } from "./handlers/move.js";
 import { runPick } from "./handlers/pick.js";
 import { GoogleSheetsPool, type PoolStore } from "../storage/poolPick.js";
 import { logger } from "../utils/logger.js";
@@ -42,11 +41,11 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
 
   // /start /help —— 簡短說明
   bot.start((ctx) =>
-    ctx.reply("貼「短影音連結 + 備註」我就幫你收進暫存區。指令:/stats /move /pick"),
+    ctx.reply("貼「短影音連結 + 備註」我就幫你收進暫存區。指令:/stats /pick"),
   );
   bot.help((ctx) =>
     ctx.reply(
-      "貼連結收錄;/stats 看統計;/move 把 active 標成 moved;/pick R#### 把參考池編碼打勾(交 voc 搬待拍)。",
+      "貼連結收錄;/stats 看統計;/pick R#### 把參考池編碼打勾(交 voc 搬待拍)。",
     ),
   );
 
@@ -58,18 +57,6 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
       logger.error("/stats 失敗", err);
       await ctx.reply("❌ 取統計失敗。").catch(() => {});
       await notifyError(`/stats 失敗:${errText(err)}`);
-    }
-  });
-
-  // /move [VIDEO_ID]
-  bot.command("move", async (ctx) => {
-    const arg = commandArg(ctx, "move");
-    try {
-      await ctx.reply(await runMove(arg, { storage }));
-    } catch (err) {
-      logger.error("/move 失敗", err);
-      await ctx.reply("❌ 搬移失敗。").catch(() => {});
-      await notifyError(`/move 失敗:${errText(err)}`);
     }
   });
 
@@ -94,7 +81,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
     const text = ctx.message.text;
     // 未知指令(以 / 開頭但沒對到)→ 提示,不要當連結處理
     if (text.startsWith("/")) {
-      return ctx.reply("不認得這個指令。可用:/stats /move /pick,或直接貼連結。");
+      return ctx.reply("不認得這個指令。可用:/stats /pick,或直接貼連結。");
     }
     try {
       const result = await runCollect(
