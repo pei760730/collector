@@ -35,6 +35,7 @@ const YOUTUBE_PATTERNS = [
   /\/live\/([a-zA-Z0-9_-]{11})/,
 ];
 const XHS_PATTERNS = [/\/explore\/([a-zA-Z0-9]+)/];
+const THREADS_PATTERNS = [/\/post\/([a-zA-Z0-9_-]+)/];
 
 export function extractVideoId(
   platform: Platform,
@@ -61,6 +62,10 @@ export function extractVideoId(
     case "小紅書":
       prefix = "xhs";
       raw = firstMatch(url, XHS_PATTERNS);
+      break;
+    case "Threads":
+      prefix = "threads";
+      raw = firstMatch(url, THREADS_PATTERNS);
       break;
     // Facebook / X / 抖音:n8n 版沒有抽 ID 規則 → 視為不支援
     default:

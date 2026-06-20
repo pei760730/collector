@@ -9,6 +9,7 @@ export type Platform =
   | "YouTube"
   | "Facebook"
   | "Instagram"
+  | "Threads"
   | "X"
   | "抖音"
   | "小紅書";

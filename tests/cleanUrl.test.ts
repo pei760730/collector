@@ -39,4 +39,14 @@ describe("cleanUrl", () => {
     const { cleanUrl: out } = cleanUrl("https://x.com/a?utm_source=ig");
     expect(out).toBe("https://x.com/a");
   });
+
+  it("清掉 Meta/Threads 分享追蹤碼(xmt/slof/igsh)", () => {
+    const out = cleanUrl(
+      "https://www.threads.com/@u/post/DZwtc9Jk7Yf?xmt=AQG0abc&slof=1",
+    ).cleanUrl;
+    expect(out).toBe("https://www.threads.com/@u/post/DZwtc9Jk7Yf");
+    expect(cleanUrl("https://www.instagram.com/reel/ABC?igsh=xx").cleanUrl).toBe(
+      "https://www.instagram.com/reel/ABC",
+    );
+  });
 });

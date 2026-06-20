@@ -16,6 +16,11 @@ const TRACKING_PARAMS = new Set([
   "msclkid",
   "twclid",
   "li_fat_id",
+  // Meta / Instagram / Threads 分享追蹤碼
+  "igsh",
+  "igshid",
+  "xmt",
+  "slof",
 ]);
 
 /** 行動版 → 桌面版 host 對照。 */

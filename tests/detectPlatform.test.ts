@@ -9,6 +9,8 @@ describe("detectPlatform", () => {
     ["https://www.facebook.com/watch?v=1", "Facebook"],
     ["https://fb.watch/xyz", "Facebook"],
     ["https://www.instagram.com/reel/abc", "Instagram"],
+    ["https://www.threads.com/@u/post/DZwtc9Jk7Yf", "Threads"],
+    ["https://www.threads.net/@u/post/DZwtc9Jk7Yf", "Threads"],
     ["https://x.com/a/status/1", "X"],
     ["https://twitter.com/a/status/1", "X"],
     ["https://www.douyin.com/video/123", "抖音"],

@@ -69,6 +69,12 @@ describe("extractVideoId", () => {
     expect(r.videoId).toBe("unknown_1700000000000");
   });
 
+  it("Threads /post/<id>", () => {
+    const r = extractVideoId("Threads", "https://www.threads.com/@u/post/DZwtc9Jk7Yf");
+    expect(r.videoId).toBe("threads_DZwtc9Jk7Yf");
+    expect(r.unsupported).toBe(false);
+  });
+
   it("YouTube channel/@user 不該被當成影片", () => {
     expect(extractVideoId("YouTube", "https://www.youtube.com/channel/UCabcdefghij", FIXED).unsupported).toBe(true);
     expect(extractVideoId("YouTube", "https://www.youtube.com/@someuser11", FIXED).unsupported).toBe(true);
