@@ -10,7 +10,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 **預設負責:**
 - `src/`(config / pipeline / storage / bot handlers / messages / utils / types)
 - `tests/`(Vitest)、`scripts/`(讀回驗證腳本)、`package.json` / `tsconfig*.json` / `vitest.config.ts`
-- `.github/workflows/`(`ci.yml`)、`Dockerfile` / `docker-compose.yml`
+- `.github/workflows/`(`ci.yml` 測試、`collect.yml` cron drain 部署)、`Dockerfile` / `docker-compose.yml`(可選的雲端常駐路)
 - bug 修復、refactor、lint/型別/測試修復、效能
 
 **被要求才碰:**

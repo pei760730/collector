@@ -45,7 +45,7 @@
 
 - 使用者 **Pei**([pei760730](https://github.com/pei760730)),回覆繁體中文、短句直接。
 - 技術棧已定案:Node.js + TypeScript、telegraf、googleapis、dayjs、vitest。儲存 Google Sheets。
-- 部署:Docker 自架、long polling 為預設(`BOT_MODE=polling`)。webhook 模式需 `WEBHOOK_DOMAIN`。
+- **部署:GitHub Actions cron drain($0,預設)** —— `.github/workflows/collect.yml` 每小時跑 `npm run drain`(`src/drain.ts`:`getUpdates` 撈乾→`handleUpdate`→ack→結束)。Telegram 留更新 ~24h,間隔<24h 不漏;收訊息延遲最多 ~1h。**不要在本機 Docker/WSL2 跑常駐**:連 googleapis 帶 JWT 大封包會 `Premature close`(WSL2 MTU 丟大封包)。要「秒回」才用常駐 long polling(`src/index.ts`,`BOT_MODE=polling`),且部署到雲端 VM 而非本機 Docker。webhook 模式需 `WEBHOOK_DOMAIN`。
 - 開發指令:`npm run dev`(tsx watch)、`npm test`、`npm run typecheck`、`npm run build`。
 
 ## 第五層:待確認(邊做邊修)

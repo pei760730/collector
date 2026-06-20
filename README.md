@@ -53,15 +53,25 @@ npm run typecheck         # tsc(含 tests)
 npm run build && npm start
 ```
 
-## 部署(Docker 自架,長連線預設)
+## 部署(GitHub Actions cron drain,$0,預設)
+
+正式部署**不需要常駐機器**。`.github/workflows/collect.yml` 每小時跑一次 `npm run drain`:把 Telegram 這 24h 囤的更新一次撈乾→處理→寫暫存區→結束。Telegram 保留未領更新約 24h,間隔 < 24h 就不漏訊息;public repo 的 Actions 免費額度無上限。
+
+- 設 3 個 GitHub Secrets:`TELEGRAM_BOT_TOKEN`、`GOOGLE_SERVICE_ACCOUNT_JSON`、`GOOGLE_SHEET_ID`。
+- 手動補跑:Actions → collect → Run workflow。
+- **取捨**:收訊息延遲最多約 1 小時(下個整點才入庫+回覆)。
+
+### (可選)常駐 polling — 要「秒回」才用
+
+不想等整點、要即時回覆,才需要常駐 long polling(`src/index.ts`)。本機 Docker Desktop/WSL2 連 googleapis 大封包會 `Premature close`(見 `CLAUDE.md`),所以常駐要跑就**部署到雲端 VM / 容器host**,別在本機 Docker 跑:
 
 ```bash
-cp .env.example .env      # 填好變數
-docker compose up -d --build
+cp .env.example .env          # 填好變數
+docker compose up -d --build  # BOT_MODE=polling
 docker compose logs -f
 ```
 
-預設 `BOT_MODE=polling`(long polling,不需公網 IP / webhook)。要走 webhook 設 `BOT_MODE=webhook` + `WEBHOOK_DOMAIN`,並在 compose 打開對外埠。
+要走 webhook 設 `BOT_MODE=webhook` + `WEBHOOK_DOMAIN`,並在 compose 打開對外埠。
 
 ## 設定(.env)
 
