@@ -12,7 +12,6 @@ function memoryConfig(): Config {
     storage: "memory",
     webhook: { domain: "", path: "/telegraf", port: 8080 },
     google: null, // memory 乾跑:pool=null,不碰真表
-    adminChatId: "",
     errorChatId: "",
     dedupePeriodDays: 180,
     expandShortUrls: false,

@@ -81,7 +81,7 @@ docker compose logs -f
 | `GOOGLE_SERVICE_ACCOUNT_JSON` / `_BASE64` / `_FILE` | service account 憑證(三選一) |
 | `GOOGLE_SHEET_ID` | 試算表 ID |
 | `STAGING_SHEET_NAME` | 暫存區分頁名(預設「暫存區」) |
-| `ADMIN_CHAT_ID` / `ERROR_CHAT_ID` | 通知 / 錯誤回報 chat |
+| `ERROR_CHAT_ID` | 錯誤回報 chat(失敗時 bot 主動通知) |
 | `DEDUPE_PERIOD_DAYS` | 去重時間窗(預設 180) |
 | `EXPAND_SHORT_URLS` | 是否自動展開短網址(預設 false) |
 | `BOT_MODE` | `polling`(預設)或 `webhook` |
