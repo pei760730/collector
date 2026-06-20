@@ -150,11 +150,11 @@ export class GoogleSheetsStorage implements Storage {
         }),
       );
     } else if (!aligned) {
-      // 已有表頭但跟 schema 不一致 —— **不覆蓋**(避免把既有資料欄位錯位)。
-      // 只大聲警告,讓人去對齊,寧可停在這也不要默默毀資料。
-      logger.error(
-        `暫存區表頭與 schema 不一致且非空,拒絕覆蓋(避免毀資料)。` +
-          `現有=[${header.join(",")}] 期望=[${expected.join(",")}]。請人工對齊。`,
+      // 已有表頭但跟 schema 不一致 → fail fast。append 用固定欄序硬塞,放行會「錯欄寫入」
+      // (平台值落到 DATE 欄之類)靜默毀資料。寧可停在這(對齊註解原本的意圖)也不要默默寫壞。
+      throw new Error(
+        `暫存區表頭與 schema 不一致且非空,拒絕寫入(避免錯欄毀資料)。` +
+          `現有=[${header.join(",")}] 期望=[${expected.join(",")}]。請人工對齊表頭。`,
       );
     }
   }

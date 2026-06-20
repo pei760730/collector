@@ -29,12 +29,14 @@ const TIKTOK_PATTERNS = [
 ];
 const INSTAGRAM_PATTERNS = [/\/(p|reel)\/([a-zA-Z0-9_-]+)/];
 // 只認真正帶影片 id 的形態 —— 不要用裸 `/([11])`,否則 /channel/UC… 之類會被誤抓。
+// 結尾 (?![a-zA-Z0-9_-]) 右邊界:YouTube ID 恰 11 碼。沒邊界時非 11 碼(如 12 碼)
+// 會被「靜默吃前 11 碼」造出截斷的錯 id;有邊界 → 非 11 碼整段不命中 → 落 unknown_*(同 TikTok 19 碼邊界的教訓)。
 const YOUTUBE_PATTERNS = [
-  /shorts\/([a-zA-Z0-9_-]{11})/,
-  /[?&]v=([a-zA-Z0-9_-]{11})/,
-  /youtu\.be\/([a-zA-Z0-9_-]{11})/,
-  /\/embed\/([a-zA-Z0-9_-]{11})/,
-  /\/live\/([a-zA-Z0-9_-]{11})/,
+  /shorts\/([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/,
+  /[?&]v=([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/,
+  /youtu\.be\/([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/,
+  /\/embed\/([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/,
+  /\/live\/([a-zA-Z0-9_-]{11})(?![a-zA-Z0-9_-])/,
 ];
 const XHS_PATTERNS = [/\/explore\/([a-zA-Z0-9]+)/];
 const THREADS_PATTERNS = [/\/post\/([a-zA-Z0-9_-]+)/];

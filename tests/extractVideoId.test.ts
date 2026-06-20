@@ -51,6 +51,24 @@ describe("extractVideoId", () => {
     ).toBe("yt_dQw4w9WgXcQ");
   });
 
+  it("YouTube 11 碼後接 query 參數仍可抽", () => {
+    expect(extractVideoId("YouTube", "https://youtu.be/dQw4w9WgXcQ?si=abc").videoId).toBe(
+      "yt_dQw4w9WgXcQ",
+    );
+  });
+
+  it("YouTube 非 11 碼(12 碼)→ 不截斷,落 unknown_(unsupported)", () => {
+    const r = extractVideoId("YouTube", "https://www.youtube.com/watch?v=AAAAAAAAAAAA", FIXED);
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("unknown_1700000000000");
+  });
+
+  it("YouTube shorts 13 碼 → 不截斷,落 unknown_", () => {
+    expect(
+      extractVideoId("YouTube", "https://www.youtube.com/shorts/ABCDEFGHIJKLM", FIXED).unsupported,
+    ).toBe(true);
+  });
+
   it("小紅書 /explore/<id>", () => {
     expect(
       extractVideoId("小紅書", "https://www.xiaohongshu.com/explore/abc123").videoId,

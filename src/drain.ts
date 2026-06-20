@@ -20,7 +20,7 @@ import { logger } from "./utils/logger.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  process.env.TZ = config.tz;
+  // DATE / 去重窗一律 Asia/Taipei(utils/date.ts 寫死),不靠 process.env.TZ。
 
   let storage: Storage;
   if (config.storage === "memory") {
