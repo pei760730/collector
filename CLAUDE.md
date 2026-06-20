@@ -66,7 +66,8 @@ voc 的 `src/voc/sync.py`(指令 `voc sync-pool`)從**同一張表**讀「暫存
   - `VIDEO_REF` → 後備連結(CLEAN_URL 空時用)
   - `CLEAN_URL` → 連結(**voc 去重 key + 「打開」用**)
   - `DATE` → 加入日期(voc `normalize_date` 轉 ISO)
-- **bot 仍寫滿 14 欄沒問題**:voc 參考池現在只留 5 欄(id/平台/連結/狀態/加入日期),`VIDEO_ID/SENDER/NOTE` 等原始細節 voc **不再複製**,留在暫存區當原始底料(voc 設計如此,不是漏)。梗/點子改在 `pick` 時落地到「待拍.備註」。
-- **去重**:voc 用**乾淨連結**(`_dedup_key` 砍 query/fragment + 去尾斜線 + lower)。冪等,重跑 sync 不重複。
-- **⚠️ 殘留 edge(voc 端,低頻)**:`_dedup_key` 砍 query → 只有 `youtube.com/watch?v=` 這種「ID 在 query」的會誤判重複;`youtu.be/`、`shorts/`、IG、TikTok、FB share、X、小紅書 都是 path-based,不受影響。要修在 voc(dedup 對 youtube 改用 v= 參數或 path 正規化)。**改 voc 另開 voc session**,別從 bot 滑上游。
+- **bot 仍寫滿 14 欄沒問題**:voc 參考池現在 5 欄 = `id/平台/連結/挑/加入日期`(voc PR #7「砍狀態欄、改 checkbox 挑片」後;舊「狀態」欄已砍 —— 在池=還沒挑,勾「挑」→ `voc pick` 整列搬待拍、本列消失,所以不需狀態)。`VIDEO_ID/SENDER/NOTE` 等原始細節 voc **不再複製**,留在暫存區當原始底料(voc 設計如此,不是漏)。梗/點子改在 `pick` 時落地到「待拍.備註」。
+- **Threads 兩端都支援(2026-06-20 對齊確認)**:voc `normalize._PLATFORM_RULES` 有 `threads.(net|com)` + `/post/(id)` 抽取,`parse_url` 認得;voc `_norm_platform("Threads")` 走 `.lower()` fallback → 參考池平台欄落 `threads`,與 voc 自身慣例一致。(脆弱點:voc `sync._PLATFORM_MAP` 沒明列 threads,靠 fallback 剛好對上;要硬化在 voc 補一行,屬可選、現在不壞。)
+- **去重**:voc `_dedup_key` 優先用 `parse_url` 抽「平台:影片id」當 key(抽不到才退乾淨連結路徑:砍 query/fragment + 去尾斜線 + lower)。冪等,重跑 sync 不重複。bot 端去重(暫存區用 VIDEO_ID)與 voc 端(參考池用連結 key)各自獨立,前綴格式(`threads_`/`threads:`)不需一致。
+- **✅ 原 youtube `watch?v=` 去重 edge 已修(voc PR #5 merged,2026-06-20)**:`_dedup_key` 改抽「平台:影片id」,`watch?v=AAA` 與 `watch?v=BBB` 不再砍 query 後塌成重複;同支影片的 `youtu.be/`、`shorts/`、`watch?v=` 反而收斂同 key。**改 voc 一律另開 voc session**,別從 bot 滑上游。
 - 驗證腳本:`npx tsx scripts/verify-sheet.ts`(列分頁)、`scripts/read-staging.ts`(讀暫存區)、`scripts/read-refs.ts`(讀參考池)。
