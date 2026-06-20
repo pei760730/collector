@@ -1,0 +1,33 @@
+name: collect
+
+# 定時把 Telegram 這段時間囤的訊息撈乾、解析、寫進「暫存區」,然後結束。
+# 取代常駐機器:repo 是 public → Actions 免費額度無上限,$0。
+# Telegram 保留未領更新約 24h,只要間隔 < 24h 就不漏訊息。
+on:
+  schedule:
+    - cron: "0 * * * *" # 每小時整點(UTC);收訊息延遲最多約 1 小時
+  workflow_dispatch: {} # 手動補跑
+
+# 同時只跑一個,避免兩個 job 並行領 getUpdates 互搶(會漏 ack)。
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: drain
+        run: npm run drain
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          STORAGE: sheets
