@@ -143,6 +143,30 @@ describe("runCollect", () => {
     expect(r.error).toContain("sheet 寫入炸了");
   });
 
+  it("寫入失敗 → 觸發 onPersistError(drain 靠它停在 offset、不丟資料)", async () => {
+    const storage = new MemoryStorage();
+    storage.append = async () => {
+      throw new Error("sheet 寫入炸了");
+    };
+    let persistFailed = false;
+    const r = await runCollect(
+      { text: "https://youtu.be/dQw4w9WgXcQ x", senderName: "Pei" },
+      { ...deps(storage), onPersistError: () => (persistFailed = true) },
+    );
+    expect(persistFailed).toBe(true); // drain 收得到「沒持久化」訊號
+    expect(r.error).toBeDefined(); // 同時 contract 不變(仍回 error)
+  });
+
+  it("成功寫入 → 不觸發 onPersistError", async () => {
+    const storage = new MemoryStorage();
+    let persistFailed = false;
+    await runCollect(
+      { text: "https://youtu.be/dQw4w9WgXcQ x", senderName: "Pei" },
+      { ...deps(storage), onPersistError: () => (persistFailed = true) },
+    );
+    expect(persistFailed).toBe(false);
+  });
+
   it("DATE 寫今天(台北)", async () => {
     const storage = new MemoryStorage();
     await runCollect(
