@@ -8,7 +8,6 @@ import { cleanUrl } from "./cleanUrl.js";
 import { detectPlatform } from "./detectPlatform.js";
 import { extractVideoId } from "./extractVideoId.js";
 import type { ParsedMessage, StagingRow } from "../types.js";
-import { STATUS } from "../types.js";
 import { todayTaipei } from "../utils/date.js";
 
 export { NoUrlError } from "./parse.js";
@@ -49,13 +48,10 @@ export function assembleDraft(parsed: ParsedMessage, now: () => number = Date.no
 
   const row: StagingRow = {
     PLATFORM: platform.platform,
-    VIDEO_REF: parsed.rawUrl,
     DATE: date,
     NOTE: parsed.note,
     CLEAN_URL: cleaned.cleanUrl,
     VIDEO_ID: videoId,
-    SENDER: parsed.sender,
-    STATUS: STATUS.ACTIVE,
   };
 
   return { row, videoId, unsupported: vid.unsupported, isShortUrl: cleaned.isShortUrl };

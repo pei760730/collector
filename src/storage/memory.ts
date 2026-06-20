@@ -46,12 +46,6 @@ export class MemoryStorage implements Storage {
     return this.rows.map((row, i) => ({ row, rowNumber: i + 2 }));
   }
 
-  async updateStatus(rowNumber: number, status: string): Promise<void> {
-    const idx = rowNumber - 2;
-    const r = this.rows[idx];
-    if (r) r.STATUS = status;
-  }
-
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {
     return computeStats(this.rows, opts);
   }

@@ -10,15 +10,12 @@ export function computeStats(
   opts: { recentLimit: number; nowMs: number },
 ): StatsSummary {
   const byPlatform: Record<string, number> = {};
-  const byStatus: Record<string, number> = {};
   let addedThisWeek = 0;
   let addedThisMonth = 0;
 
   for (const r of rows) {
     const p = r.PLATFORM || "未知";
     byPlatform[p] = (byPlatform[p] ?? 0) + 1;
-    const s = r.STATUS || "未知";
-    byStatus[s] = (byStatus[s] ?? 0) + 1;
 
     const age = ageInDays(r.DATE, opts.nowMs);
     if (age <= 7) addedThisWeek++;
@@ -31,7 +28,6 @@ export function computeStats(
   return {
     total: rows.length,
     byPlatform,
-    byStatus,
     addedThisWeek,
     addedThisMonth,
     recent,

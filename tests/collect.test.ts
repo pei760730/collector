@@ -21,7 +21,6 @@ describe("runCollect", () => {
     expect(all).toHaveLength(1);
     expect(all[0]!.VIDEO_ID).toBe("tiktok_7234567890");
     expect(all[0]!.NOTE).toBe("好笑");
-    expect(all[0]!.STATUS).toBe("active");
   });
 
   it("N 天內重複 → 不寫第二筆", async () => {
@@ -36,13 +35,10 @@ describe("runCollect", () => {
   it("超出去重窗 → 視為新筆", async () => {
     const old: StagingRow = {
       PLATFORM: "YouTube",
-      VIDEO_REF: "https://youtu.be/dQw4w9WgXcQ",
       DATE: "2020/1/1",
       NOTE: "舊的",
       CLEAN_URL: "https://youtu.be/dQw4w9WgXcQ",
       VIDEO_ID: "yt_dQw4w9WgXcQ",
-      SENDER: "Pei",
-      STATUS: "active",
     };
     const storage = new MemoryStorage([old]);
     const r = await runCollect(
@@ -56,13 +52,10 @@ describe("runCollect", () => {
   it("DATE 壞掉(解析不出)的同 VIDEO_ID 仍當重複,不重寫", async () => {
     const broken: StagingRow = {
       PLATFORM: "YouTube",
-      VIDEO_REF: "https://youtu.be/dQw4w9WgXcQ",
       DATE: "壞掉的日期",
       NOTE: "舊的",
       CLEAN_URL: "https://youtu.be/dQw4w9WgXcQ",
       VIDEO_ID: "yt_dQw4w9WgXcQ",
-      SENDER: "Pei",
-      STATUS: "active",
     };
     const storage = new MemoryStorage([broken]);
     const r = await runCollect(

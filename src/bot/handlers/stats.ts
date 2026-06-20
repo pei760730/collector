@@ -29,7 +29,6 @@ export async function runStats(deps: StatsDeps): Promise<string> {
     return head;
   };
   const platformLines = capList(s.byPlatform);
-  const statusLines = capList(s.byStatus);
 
   const recentLines = s.recent.map((r) => {
     const note = r.NOTE ? ` — ${r.NOTE}` : "";
@@ -44,9 +43,6 @@ export async function runStats(deps: StatsDeps): Promise<string> {
     ...platformLines,
     "",
     `本週新增：${s.addedThisWeek}　本月新增：${s.addedThisMonth}`,
-    "",
-    "狀態：",
-    ...statusLines,
     "",
     `最近 ${s.recent.length} 筆：`,
     ...recentLines,

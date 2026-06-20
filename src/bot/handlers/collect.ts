@@ -92,7 +92,7 @@ export async function runCollect(
       deps.onPersistError?.();
       return {
         reply: saveErrorMsg(detail),
-        error: `collect 寫入失敗:${detail}｜url=${draft.row.VIDEO_REF}`,
+        error: `collect 寫入失敗:${detail}｜url=${draft.row.CLEAN_URL}`,
       };
     }
 

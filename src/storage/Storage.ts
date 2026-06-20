@@ -6,14 +6,13 @@ import type { StagingRow } from "../types.js";
 
 export interface DuplicateHit {
   row: StagingRow;
-  /** 在 sheet 的列號(1-based,含表頭),供 /move 等更新用。 */
+  /** 在 sheet 的列號(1-based,含表頭)。 */
   rowNumber: number;
 }
 
 export interface StatsSummary {
   total: number;
   byPlatform: Record<string, number>;
-  byStatus: Record<string, number>;
   addedThisWeek: number;
   addedThisMonth: number;
   recent: StagingRow[];
@@ -35,11 +34,8 @@ export interface Storage {
   /** 讀全部資料列(不含表頭)。 */
   readAll(): Promise<StagingRow[]>;
 
-  /** 讀全部資料列 + **正確實體列號**(供 /move 安全更新;空白列已跳過但列號正確)。 */
+  /** 讀全部資料列 + **正確實體列號**(去重比對用;空白列已跳過但列號正確)。 */
   readRows(): Promise<DuplicateHit[]>;
-
-  /** 更新某列的 STATUS(供 /move)。 */
-  updateStatus(rowNumber: number, status: string): Promise<void>;
 
   /** 統計(供 /stats)。 */
   stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary>;
