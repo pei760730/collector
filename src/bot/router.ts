@@ -76,12 +76,12 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
     }
   });
 
-  // 一般文字訊息 → 收集 pipeline。已被上面 command 攔截的不會進來。
-  bot.on(message("text"), async (ctx) => {
-    const text = ctx.message.text;
+  // 文字 / caption 共用的收集流程。已被上面 command 攔截的不會進來。
+  const handleCollectText = async (ctx: Context, text: string) => {
     // 未知指令(以 / 開頭但沒對到)→ 提示,不要當連結處理
     if (text.startsWith("/")) {
-      return ctx.reply("不認得這個指令。可用:/stats /pick,或直接貼連結。");
+      await ctx.reply("不認得這個指令。可用:/stats /pick,或直接貼連結。").catch(() => {});
+      return;
     }
     try {
       const result = await runCollect(
@@ -94,7 +94,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
         },
       );
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,
-      // 不能因此吞掉 notifyError(寫表結果才是重點)。對齊 /stats、/move 的護法。
+      // 不能因此吞掉 notifyError(寫表結果才是重點)。對齊 /stats、/pick 的護法。
       await ctx.reply(result.reply).catch(() => {});
       if (result.error) await notifyError(result.error);
     } catch (err) {
@@ -102,7 +102,15 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
       await ctx.reply("❌ 處理時發生未預期錯誤。").catch(() => {});
       await notifyError(`collect 例外:${errText(err)}`);
     }
-  });
+  };
+
+  // 一般文字訊息 → 收集 pipeline。
+  bot.on(message("text"), (ctx) => handleCollectText(ctx, ctx.message.text));
+
+  // 媒體訊息的 caption → 同一條 pipeline。轉傳/分享影片貼文時連結常在 caption 而非 text,
+  // 只接 text 會讓這類訊息被靜默 ack 掉、不收錄也不回覆(漏資料)。caption 走 collect:
+  // 有連結就收,沒連結則回「看不懂」提示,不再無聲丟失。
+  bot.on(message("caption"), (ctx) => handleCollectText(ctx, ctx.message.caption ?? ""));
 
   // 全域兜底
   bot.catch((err, ctx) => {

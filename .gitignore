@@ -19,3 +19,5 @@ Thumbs.db
 # test / coverage
 coverage/
 .vitest/
+
+.review/
