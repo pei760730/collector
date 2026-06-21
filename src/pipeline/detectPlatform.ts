@@ -1,6 +1,7 @@
 /**
  * Detect Platform — 依優先序比對 **hostname**(不是子字串)判斷平台。
- * 比對不到 → fallback 到 Instagram(confidence=medium),沿用 n8n 行為。
+ * 比對不到 → fallback 到 Unknown(confidence=low)。不再像舊 n8n 誤猜 Instagram
+ * (那會把 threads 等未列平台標成假 Instagram;voc 下游雖會自我校正,源頭誠實才對)。
  *
  * 用 hostname 結尾比對,避免 `netflix.com` 命中 `x.com`、`tiktok.com.evil.com`
  * 被當成 tiktok 這種子字串誤判。
@@ -26,9 +27,10 @@ const RULES: Rule[] = [
   { platform: "小紅書", icon: "📕", domains: ["xhslink.com", "xiaohongshu.com"] },
 ];
 
-export const PLATFORM_ICON: Record<Platform, string> = Object.fromEntries(
-  RULES.map((r) => [r.platform, r.icon]),
-) as Record<Platform, string>;
+export const PLATFORM_ICON: Record<Platform, string> = {
+  ...Object.fromEntries(RULES.map((r) => [r.platform, r.icon])),
+  Unknown: "❓",
+} as Record<Platform, string>;
 
 /** hostname 是否等於或為某網域的子網域(`www.youtube.com` ⊂ `youtube.com`)。 */
 function hostMatches(hostname: string, domain: string): boolean {
@@ -47,7 +49,7 @@ function hostnameOf(cleanUrl: string): string | null {
 export function detectPlatform(cleanUrl: string): PlatformInfo {
   const host = hostnameOf(cleanUrl);
   if (!host) {
-    return { platform: "Instagram", icon: "📸", confidence: "low", method: "error" };
+    return { platform: "Unknown", icon: "❓", confidence: "low", method: "error" };
   }
   for (const rule of RULES) {
     if (rule.domains.some((d) => hostMatches(host, d))) {
@@ -59,7 +61,7 @@ export function detectPlatform(cleanUrl: string): PlatformInfo {
       };
     }
   }
-  // fallback:沿用 n8n —— 不認得就猜 Instagram,但標 medium 讓人看得出是猜的。
-  // 注意:fallback 時 assembleDraft 不會跑抽 id(避免在非 IG 連結上造假 ig_ id)。
-  return { platform: "Instagram", icon: "📸", confidence: "medium", method: "fallback" };
+  // fallback:認不得的網域標 Unknown(不誤猜 Instagram)。confidence=low。
+  // 注意:fallback 時 assembleDraft 不會跑抽 id(method!=="domain_match"),故落 unknown_。
+  return { platform: "Unknown", icon: "❓", confidence: "low", method: "fallback" };
 }

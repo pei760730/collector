@@ -12,7 +12,9 @@ export type Platform =
   | "Threads"
   | "X"
   | "抖音"
-  | "小紅書";
+  | "小紅書"
+  /** 認不得的網域(fallback / 解析失敗)。不再誤猜 Instagram。 */
+  | "Unknown";
 
 export type Confidence = "high" | "medium" | "low";
 export type DetectionMethod = "domain_match" | "fallback" | "error";

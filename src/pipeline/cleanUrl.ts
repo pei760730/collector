@@ -47,6 +47,18 @@ const SHORT_URL_HOSTS = new Set([
   "vt.tiktok.com",
 ]);
 
+/**
+ * Facebook 轉址解開:`l.facebook.com/l.php?u=<編碼真網址>` → 還原內層真網址。
+ * 非 FB 轉址回 null。`searchParams.get` 已 percent-decode,直接用(不再 decodeURIComponent
+ * 雙重解碼)。概念借自 OF-DOG —— 從 FB app 分享 IG/TikTok/YT 等「本來就支援」的連結
+ * 常被包成這種轉址,不解會落 fallback + unknown_ 垃圾列。
+ */
+function unwrapFacebookRedirect(url: URL): string | null {
+  const host = url.hostname.toLowerCase();
+  if (host !== "l.facebook.com" && host !== "lm.facebook.com") return null;
+  return url.searchParams.get("u");
+}
+
 /** 是否為已知短網址服務(供 collect 決定要不要展開)。 */
 export function hasShortHost(url: string): boolean {
   let host: string;
@@ -77,6 +89,13 @@ export function cleanUrl(input: string): CleanedUrl {
   } catch {
     // 不是合法 URL → 走純字串清理
     return { cleanUrl: stringCleanup(raw), isShortUrl };
+  }
+
+  // Facebook 轉址解開:還原成內層真網址後,重走完整清理(去追蹤參數/行動版/偵測短網址)。
+  // 內層 host 不會再是 l.facebook → 不會無限遞迴;isShortUrl 改以內層判定(內層可能是 vm.tiktok)。
+  const fbInner = unwrapFacebookRedirect(url);
+  if (fbInner != null) {
+    return cleanUrl(fbInner);
   }
 
   // 行動版轉桌面版

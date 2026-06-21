@@ -52,4 +52,31 @@ describe("cleanUrl", () => {
       "https://www.instagram.com/reel/ABC",
     );
   });
+
+  describe("Facebook 轉址解開(l.facebook.com/l.php?u=…)", () => {
+    it("還原內層 IG reel(外層 fbclid 也清掉)", () => {
+      const inner = "https://www.instagram.com/reel/CxYz_-1";
+      const wrapped = `https://l.facebook.com/l.php?u=${encodeURIComponent(inner)}&fbclid=abc`;
+      expect(cleanUrl(wrapped).cleanUrl).toBe(inner);
+    });
+
+    it("還原內層後續走完整清理(內層自己的追蹤參數也清)", () => {
+      const inner = "https://www.instagram.com/reel/CxYz_-1?igsh=zzz";
+      const wrapped = `https://l.facebook.com/l.php?u=${encodeURIComponent(inner)}`;
+      expect(cleanUrl(wrapped).cleanUrl).toBe("https://www.instagram.com/reel/CxYz_-1");
+    });
+
+    it("內層是 TikTok 短連結 → isShortUrl 以內層判定(true)", () => {
+      const inner = "https://vm.tiktok.com/ZGJabc/";
+      const wrapped = `https://lm.facebook.com/l.php?u=${encodeURIComponent(inner)}`;
+      const r = cleanUrl(wrapped);
+      expect(r.cleanUrl).toContain("vm.tiktok.com");
+      expect(r.isShortUrl).toBe(true);
+    });
+
+    it("l.facebook 但沒有 u 參數 → 不解開(當一般 facebook 連結)", () => {
+      const out = cleanUrl("https://l.facebook.com/somewhere").cleanUrl;
+      expect(out).toContain("l.facebook.com");
+    });
+  });
 });
