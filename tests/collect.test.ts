@@ -109,6 +109,18 @@ describe("runCollect", () => {
     const row = (await storage.readAll())[0]!;
     expect(row.VIDEO_ID).toMatch(/^unknown_/);
     expect(row.VIDEO_ID).not.toMatch(/^ig_/);
+    expect(row.PLATFORM).toBe("Unknown"); // 不再誤猜 Instagram
+  });
+
+  it("FB 轉址包住 IG reel → 解開後正確收成 Instagram + ig_(非 Instagram/unknown_)", async () => {
+    const storage = new MemoryStorage();
+    const inner = "https://www.instagram.com/reel/CxYz_-1";
+    const wrapped = `https://l.facebook.com/l.php?u=${encodeURIComponent(inner)}&fbclid=abc`;
+    await runCollect({ text: `${wrapped} 分享來的`, senderName: "Pei" }, deps(storage));
+    const row = (await storage.readAll())[0]!;
+    expect(row.PLATFORM).toBe("Instagram");
+    expect(row.VIDEO_ID).toBe("ig_CxYz_-1");
+    expect(row.CLEAN_URL).toBe(inner);
   });
 
   it("寫入失敗 → 回錯誤 + error 通知", async () => {

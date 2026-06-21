@@ -28,10 +28,10 @@ describe("detectPlatform", () => {
     });
   }
 
-  it("不認得 → fallback Instagram(medium)", () => {
+  it("不認得 → fallback Unknown(low,不誤猜 Instagram)", () => {
     const r = detectPlatform("https://example.com/whatever");
-    expect(r.platform).toBe("Instagram");
-    expect(r.confidence).toBe("medium");
+    expect(r.platform).toBe("Unknown");
+    expect(r.confidence).toBe("low");
     expect(r.method).toBe("fallback");
   });
 
