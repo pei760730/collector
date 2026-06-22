@@ -8,6 +8,7 @@ describe("detectPlatform", () => {
     ["https://www.youtube.com/shorts/abcdefghijk", "YouTube"],
     ["https://www.facebook.com/watch?v=1", "Facebook"],
     ["https://fb.watch/xyz", "Facebook"],
+    ["https://fb.me/abc", "Facebook"],
     ["https://www.instagram.com/reel/abc", "Instagram"],
     ["https://www.threads.com/@u/post/DZwtc9Jk7Yf", "Threads"],
     ["https://www.threads.net/@u/post/DZwtc9Jk7Yf", "Threads"],

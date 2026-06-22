@@ -62,11 +62,12 @@ voc 的 `src/voc/sync.py`(指令 `voc sync-pool`)從**同一張表**讀「暫存
 
 - **同一張表**:bot `GOOGLE_SHEET_ID` 必須 = voc `VOC_SPREADSHEET_ID`(`1V_CaTb…`)。憑證共用 voc 的 `service_account.json`(`voc-sheets@voc-499914`)。
 - **bot 自建暫存區分頁**:voc `init-sheet` 不建「暫存區」,由 bot `GoogleSheetsStorage.ensureHeader` 啟動時自建(addSheet + 表頭)。
-- **契約欄位(以 voc `sync.py` 當前讀的為準,2026-06-20)**:voc **只按表頭名讀這 3 欄**,改名要兩 repo 一起改:
-  - `PLATFORM` → 平台(voc `_PLATFORM_MAP` 轉小寫)
-  - `CLEAN_URL` → 連結(**voc 去重 key + 「打開」用**)
+- **契約欄位(以 voc `sync.py` 當前讀的為準,2026-06-22)**:voc **只按表頭名讀這 3 欄**,改名要兩 repo 一起改。這條不變式現由 `tests/contract.test.ts` 守(改欄名 / 新增平台碼 voc 不認得 → CI 紅):
+  - `CLEAN_URL` → 連結(**voc 去重 key + 「打開」用**;voc 真正依賴的核心)
   - `DATE` → 加入日期(voc `normalize_date` 轉 ISO)
-  - ✅ voc 端已清掉舊 `or get(raw,"VIDEO_REF")` 後備死碼(voc PR #10,2026-06-20;test 釘住、design.md 同步於 voc PR #12)。sync 現只依賴上述 3 欄,無 VIDEO_REF 相依。
+  - `PLATFORM` → 平台。**注意:已是 fallback-only**。voc `sync.py`(line 109-117)現在一律先用自己的 `parse_url` 重判平台(自我校正,避免被上游誤標帶歪),只有 voc 認不得的網域才回頭看 bot 的 PLATFORM。voc 認得所有 bot 認得的網域(唯一例外見下 `fb.com`)→ 實務上 bot 的 PLATFORM 欄幾乎只服務「暫存區人眼 + bot 回覆 icon」,對 voc 近乎裝飾。改 `PLATFORM` 顯示名仍要更新 contract test 的 `VOC_PLATFORM_MAP_KEYS` 鏡像。
+  - **平台偵測器兩套、各自獨立**:bot `detectPlatform`(hostname 比對)與 voc `parse_url`(regex 比對)是兩份實作。已知差異:bot Facebook 網域多 `fb.com`、voc 多 `fb.me`(bot 已於 2026-06-22 補 `fb.me` 對齊;`fb.com` 待 voc 端補,屬 voc session)。contract test 用代表性連結釘住兩邊平台碼仍對得上,防止偷偷漂移。
+  - ✅ voc 端已清掉舊 `or get(raw,"VIDEO_REF")` 後備死碼(voc PR #10,2026-06-20;test 釘住、design.md 同步於 voc PR #12)。sync 現只依賴上述欄位,無 VIDEO_REF 相依。
 - **暫存區第一性原理瘦身(2026-06-20,14→8→5)**:現 **5 欄** `PLATFORM/DATE/NOTE/CLEAN_URL/VIDEO_ID`。
   - 第一輪砍衍生/診斷:ID(≡VIDEO_ID)、AGE、PLATFORM_ICON、ERROR_LOG、PLATFORM_CONFIDENCE、DETECTION_METHOD。
   - 第二輪砍過時/單人無值:STATUS(連 `/move` 一起退役,voc 不讀)、SENDER(永遠 Pei)、VIDEO_REF(voc 後備幾乎不觸發)。

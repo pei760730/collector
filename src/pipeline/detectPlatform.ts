@@ -19,7 +19,7 @@ interface Rule {
 const RULES: Rule[] = [
   { platform: "TikTok", icon: "🎵", domains: ["tiktok.com"] },
   { platform: "YouTube", icon: "📺", domains: ["youtube.com", "youtu.be"] },
-  { platform: "Facebook", icon: "📘", domains: ["facebook.com", "fb.com", "fb.watch"] },
+  { platform: "Facebook", icon: "📘", domains: ["facebook.com", "fb.com", "fb.watch", "fb.me"] },
   { platform: "Instagram", icon: "📸", domains: ["instagram.com"] },
   { platform: "Threads", icon: "🧵", domains: ["threads.net", "threads.com"] },
   { platform: "X", icon: "🐦", domains: ["x.com", "twitter.com"] },
