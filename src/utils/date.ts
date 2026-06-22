@@ -17,6 +17,14 @@ export function todayTaipei(nowMs: number = Date.now()): string {
   return `${d.year()}/${d.month() + 1}/${d.date()}`;
 }
 
+/**
+ * 今天 ISO 日期字串 YYYY-MM-DD(台北),epoch ms 可注入以利測試。
+ * 參考池「加入日期」用 ISO(對齊 voc schema 的 ISO 慣例 + voc normalize_date)。
+ */
+export function todayIsoTaipei(nowMs: number = Date.now()): string {
+  return dayjs(nowMs).tz(TZ).format("YYYY-MM-DD");
+}
+
 /** 解析 YYYY/M/D 或 ISO 字串為 dayjs(台北);無法解析回 null。 */
 export function parseSheetDate(s: string): dayjs.Dayjs | null {
   if (!s || !s.trim()) return null;

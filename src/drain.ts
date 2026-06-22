@@ -1,5 +1,5 @@
 /**
- * drain —— 一次性把 Telegram 這 24h 內囤的更新撈乾、處理、寫表,然後結束。
+ * drain —— 一次性把 Telegram 這 24h 內囤的更新撈乾、處理、寫進「參考池」,然後結束。
  *
  * 取代常駐 long polling:給 GitHub Actions cron 週期呼叫,$0、不需常駐機器,
  * 也避開 Docker-on-WSL2 對 googleapis 大封包的 Premature close(Actions 跑 ubuntu 直連)。
@@ -8,7 +8,7 @@
  * 每次把待領更新領乾即可。用 getUpdates(offset) 逐批領 + ack(下一次帶新 offset 即確認上一批);
  * 處理走和常駐完全相同的 `bot.handleUpdate`,行為一致、不重寫邏輯。
  *
- * 失敗語意:中途崩潰沒 ack → 下次 cron 重領,storage 去重(VIDEO_ID)擋掉重複。
+ * 失敗語意:中途崩潰沒 ack → 下次 cron 重領,storage 去重(連結 key)擋掉重複。
  * at-least-once,寧可重複看得到也不要遺失(對齊 voc move_row 的同款取捨)。
  */
 import { createBot } from "./bot/router.js";
@@ -31,12 +31,12 @@ async function main(): Promise<void> {
     storage = new GoogleSheetsStorage({
       credentials: config.google.credentials,
       sheetId: config.google.sheetId,
-      sheetName: config.google.stagingSheetName,
+      sheetName: config.google.poolSheetName,
     });
   }
   await storage.ensureHeader();
 
-  // persistFailed:某筆寫入暫存區失敗(可重試)的 side-channel 旗標。每筆處理前歸零,
+  // persistFailed:某筆寫入參考池失敗(可重試)的 side-channel 旗標。每筆處理前歸零,
   // handleUpdate 內若觸發 onPersistError 會翻 true → 該筆「沒持久化」,不能 ack。
   let persistFailed = false;
   const bot = createBot(config, storage, {
@@ -66,9 +66,9 @@ async function main(): Promise<void> {
       }
       if (persistFailed) {
         // 寫入失敗(可重試):不前進 offset、結束整個 drain。前面成功的那段下次 cron 的
-        // 第一次 getUpdates(offset) 會 ack;這筆與之後的會被重領,靠 storage VIDEO_ID 去重。
+        // 第一次 getUpdates(offset) 會 ack;這筆與之後的會被重領,靠 storage 連結 key 去重。
         // 這樣才真正 at-least-once,不會把沒寫成功的訊息默默 ack 掉(CLAUDE.md 紅線)。
-        logger.error(`update ${u.update_id} 寫入暫存區失敗 → 停在此 offset,結束本輪讓下次 cron 重領`);
+        logger.error(`update ${u.update_id} 寫入參考池失敗 → 停在此 offset,結束本輪讓下次 cron 重領`);
         aborted = true;
         break outer;
       }
@@ -80,18 +80,7 @@ async function main(): Promise<void> {
   // 中止結束時刻意不 ack 未處理段,留給下次 cron 重領。
 
   logger.info(`drain ${aborted ? "中止(寫入失敗,部分未處理)" : "完成"}:已處理 ${processed} 筆更新`);
-
-  // 清窗外舊列:暫存區是 append-only,不清會無限長。去重本來就忽略窗外列(age > 窗),
-  // 刪掉不影響去重(DATE 壞掉的列 prune 也保留,與去重一致)。prune 是清理、非關鍵路徑,
-  // 失敗只記 error 不讓整個 drain 崩(這輪更新已成功入庫)。
-  try {
-    const pruned = await storage.pruneOlderThan(config.dedupePeriodDays);
-    if (pruned > 0) {
-      logger.info(`prune:刪除 ${pruned} 筆窗外(>${config.dedupePeriodDays} 天)舊列`);
-    }
-  } catch (err) {
-    logger.error("prune 失敗(忽略,不影響本輪 drain 已入庫的更新)", err);
-  }
+  // 不 prune:參考池是 voc 永久池,bot 只 append 不刪列(prune 已隨暫存區一起退役)。
 }
 
 main()

@@ -1,7 +1,7 @@
 # AGENTS.md — Codex CLI 行為規則(short-video-bot)
 
 > 這份是給 **Codex** 的。repo 的權威治理檔仍是 **`CLAUDE.md`**(永久紅線、資料地圖、技術不變式、§6 與 voc 對接契約)。Codex 動工前先讀 `CLAUDE.md`。
-> short-video-bot = Telegram 短影音收集 bot,取代舊 n8n 流程。貼「連結+備註」→ 解析→清網址→判平台→抽 video ID→去重→寫 Google Sheet「暫存區」。是 **voc 的上游**(voc `sync-pool` 從暫存區讀進參考池)。
+> short-video-bot = Telegram 短影音收集 bot,取代舊 n8n 流程。貼「連結+備註」→ 解析→清網址→判平台→抽 video ID→去重→**直接寫 voc 的 Google Sheet「參考池」**。是 **voc 的上游**(2026-06-22 起直寫參考池,廢「暫存區→sync-pool」中間層)。
 
 ## 角色
 
@@ -18,8 +18,8 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 **預設不碰(Claude Code / Owner 的領域):**
 - **Live bot 操作 / Sheet 實際寫入**(真的啟動 bot 收訊息、`STORAGE=sheets` 跑真表)
-- **與 voc 的對接契約**(`CLAUDE.md` §6 的暫存區欄位:voc 按表頭名讀 `PLATFORM/CLEAN_URL/DATE` 3 欄)—— 改欄名要兩 repo 一起,屬跨 repo 協調
-- **schema 設計判斷**(`STAGING_COLUMNS` 加/砍欄、平台規則、去重策略的大方向)
+- **與 voc 的對接契約**(`CLAUDE.md` §6 的參考池欄位:bot 直寫 voc `schema.REFS` 5 欄 `id/平台/連結/挑/加入日期`)—— 改欄名要兩 repo 一起,屬跨 repo 協調
+- **schema 設計判斷**(`POOL_COLUMNS` 加/砍欄、平台規則、去重策略的大方向)
 - `service_account.json`、`.env`(機密)
 
 ## 與 Claude Code 分工
@@ -60,13 +60,13 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 ```bash
 npm run typecheck     # tsc(含 tests),不可有型別錯
-npm test              # Vitest 全綠(pipeline 純函式 + collect/pick/router/prune 整合)
+npm test              # Vitest 全綠(pipeline 純函式 + collect/pick/router/contract 整合)
 npm run build         # tsc 出 dist/index.js(Dockerfile CMD 依賴它)
 ```
 
 - 改 pipeline / schema / storage → 必補或改對應 `tests/`,跑 `npm test`。
 - 改 `Dockerfile` / `compose` → 確認 build context 正確、`dist/index.js` 出得來、機密走 volume/env 不烤進 image。
-- 碰 Sheet 寫入路徑只能 `STORAGE=memory` 乾跑;真表驗證用 `scripts/read-staging.ts` / `read-refs.ts` 讀回(API,不靠會亂碼的 terminal)。
+- 碰 Sheet 寫入路徑只能 `STORAGE=memory` 乾跑;真表驗證用 `scripts/read-refs.ts` / `verify-sheet.ts` 讀回(API,不靠會亂碼的 terminal)。
 - 反向驗證:bot/CLI 自報成功不算數,寫入後獨立讀回確認(Windows terminal 對中文+並行會吐假成功)。
 
 ## Codex 環境 quirks(踩過的雷)

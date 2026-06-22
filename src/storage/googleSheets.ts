@@ -1,15 +1,17 @@
 /**
- * Google Sheets 版 Storage。
+ * Google Sheets 版 Storage —— 目標 = voc 的「參考池」分頁(2026-06-22 直寫,廢「暫存區」)。
  * - 最小權限:只用 spreadsheets scope。
  * - 寫入一律 RAW(避免影片ID/開頭 0 被當數字)。
- * - append 用 values.append;狀態更新用 values.update 單格。
+ * - append 用 values.append;不刪列(參考池是 voc 永久池,prune 已退役)。
+ * - 不自建/不覆寫表頭:參考池由 voc `init-sheet` 擁有;表頭缺/不齊一律 fail-fast,
+ *   不替 voc 動表結構(避免錯欄寫入靜默毀資料)。
  */
 import { google, type sheets_v4 } from "googleapis";
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
-import type { StagingRow } from "../types.js";
-import { STAGING_COLUMNS } from "../types.js";
+import type { RefRow } from "../types.js";
+import { POOL_COLUMNS } from "../types.js";
+import { dedupKey } from "../pipeline/index.js";
 import { computeStats } from "./computeStats.js";
-import { ageInDays } from "../utils/date.js";
 import { logger } from "../utils/logger.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
@@ -31,7 +33,7 @@ function colLetter(index: number): string {
   return s;
 }
 
-const LAST_COL = colLetter(STAGING_COLUMNS.length - 1);
+const LAST_COL = colLetter(POOL_COLUMNS.length - 1);
 
 /**
  * 429 / 5xx 退避重試(沿用 th-ops 策略)。其餘錯誤直接丟。
@@ -88,25 +90,25 @@ export class GoogleSheetsStorage implements Storage {
     this.sheets = google.sheets({ version: "v4", auth });
   }
 
-  /** `暫存區!A1:N1` 之類的 range,中文分頁名要加引號。 */
+  /** `'參考池'!A1:E1` 之類的 range,中文分頁名要加引號。 */
   private range(a1: string): string {
     return `'${this.sheetName}'!${a1}`;
   }
 
-  private rowToValues(row: StagingRow): string[] {
-    return STAGING_COLUMNS.map((c) => String(row[c] ?? ""));
+  private rowToValues(row: RefRow): string[] {
+    return POOL_COLUMNS.map((c) => String(row[c] ?? ""));
   }
 
-  private valuesToRow(values: string[]): StagingRow {
+  private valuesToRow(values: string[]): RefRow {
     const obj = {} as Record<string, string>;
-    STAGING_COLUMNS.forEach((c, i) => {
+    POOL_COLUMNS.forEach((c, i) => {
       obj[c] = values[i] ?? "";
     });
-    return obj as unknown as StagingRow;
+    return obj as unknown as RefRow;
   }
 
-  /** 分頁不存在就建(voc init-sheet 不建「暫存區」,bot 自己負責)。 */
-  private async ensureTab(): Promise<boolean> {
+  /** 確認分頁存在(參考池由 voc 擁有,bot 不自建);不存在 → fail-fast。 */
+  private async assertTab(): Promise<void> {
     const meta = await withRetry("取分頁清單", () =>
       this.sheets.spreadsheets.get({
         spreadsheetId: this.sheetId,
@@ -114,19 +116,14 @@ export class GoogleSheetsStorage implements Storage {
       }),
     );
     const titles = (meta.data.sheets ?? []).map((s) => s.properties?.title);
-    if (titles.includes(this.sheetName)) return false;
-    logger.info(`分頁不存在,建立:${this.sheetName}`);
-    await withRetry("建立分頁", () =>
-      this.sheets.spreadsheets.batchUpdate({
-        spreadsheetId: this.sheetId,
-        requestBody: { requests: [{ addSheet: { properties: { title: this.sheetName } } }] },
-      }),
+    if (titles.includes(this.sheetName)) return;
+    throw new Error(
+      `找不到分頁「${this.sheetName}」。參考池由 voc 擁有,請先用 voc init-sheet 建表(bot 不自建 voc 的表)。`,
     );
-    return true;
   }
 
   async ensureHeader(): Promise<void> {
-    const created = await this.ensureTab();
+    await this.assertTab();
     const res = await withRetry("讀表頭", () =>
       this.sheets.spreadsheets.values.get({
         spreadsheetId: this.sheetId,
@@ -134,27 +131,15 @@ export class GoogleSheetsStorage implements Storage {
       }),
     );
     const header = res.data.values?.[0] ?? [];
-    const expected = STAGING_COLUMNS as string[];
-    const empty = header.length === 0;
+    const expected = POOL_COLUMNS as string[];
     const aligned =
       header.length === expected.length && expected.every((c, i) => header[i] === c);
-
-    if (empty || created) {
-      // 全新分頁/空表頭 → 寫入正確表頭
-      await withRetry("寫表頭", () =>
-        this.sheets.spreadsheets.values.update({
-          spreadsheetId: this.sheetId,
-          range: this.range(`A1:${LAST_COL}1`),
-          valueInputOption: "RAW",
-          requestBody: { values: [expected] },
-        }),
-      );
-    } else if (!aligned) {
-      // 已有表頭但跟 schema 不一致 → fail fast。append 用固定欄序硬塞,放行會「錯欄寫入」
-      // (平台值落到 DATE 欄之類)靜默毀資料。寧可停在這(對齊註解原本的意圖)也不要默默寫壞。
+    if (!aligned) {
+      // 不替 voc 改表頭:append 用固定欄序硬塞,表頭錯位會「錯欄寫入」(平台值落到連結欄之類)
+      // 靜默毀 voc 的池。寧可停在這也不要默默寫壞。請對齊 voc schema.REFS 後再跑。
       throw new Error(
-        `暫存區表頭與 schema 不一致且非空,拒絕寫入(避免錯欄毀資料)。` +
-          `現有=[${header.join(",")}] 期望=[${expected.join(",")}]。請人工對齊表頭。`,
+        `參考池表頭與 schema 不一致,拒絕寫入(避免錯欄毀資料)。` +
+          `現有=[${header.join(",")}] 期望=[${expected.join(",")}]。請對齊 voc schema.REFS。`,
       );
     }
   }
@@ -177,7 +162,7 @@ export class GoogleSheetsStorage implements Storage {
     return out;
   }
 
-  async readAll(): Promise<StagingRow[]> {
+  async readAll(): Promise<RefRow[]> {
     return (await this.rawRows()).map((r) => this.valuesToRow(r.cells));
   }
 
@@ -188,21 +173,8 @@ export class GoogleSheetsStorage implements Storage {
     }));
   }
 
-  async findByVideoId(videoId: string, withinDays?: number): Promise<DuplicateHit | null> {
-    const key = videoId.trim(); // 改進#1:lookup 去多餘空白
-    if (!key) return null; // 空 key 不去重(避免跟空白列互撞)
-    for (const { row, rowNumber } of await this.readRows()) {
-      if (row.VIDEO_ID.trim() !== key) continue;
-      // 只在「日期可解析且確實超窗」時才略過;解析不出(ageInDays=Infinity)時
-      // 不能略過 —— 否則同 VIDEO_ID 但 DATE 被改壞的列會被當成不存在而重寫。
-      const age = ageInDays(row.DATE);
-      if (withinDays != null && Number.isFinite(age) && age > withinDays) continue;
-      return { row, rowNumber };
-    }
-    return null;
-  }
-
-  async append(row: StagingRow): Promise<void> {
+  async append(row: RefRow): Promise<void> {
+    const key = dedupKey(row.連結);
     await withRetry(
       "append",
       () =>
@@ -214,10 +186,10 @@ export class GoogleSheetsStorage implements Storage {
           requestBody: { values: [this.rowToValues(row)] },
         }),
       {
-        // 冪等護欄:呼叫端(collect)已先去重,故重試前若這 VIDEO_ID 已在表上,
+        // 冪等護欄:呼叫端(collect)已先去重,故重試前若這連結 key 已在表上,
         // 必是上一次「寫成功但回應遺失」留下的,視為完成,避免重試雙寫。
         alreadyDone: async () =>
-          !!row.VIDEO_ID.trim() && (await this.findByVideoId(row.VIDEO_ID)) != null,
+          !!key && (await this.readRows()).some((h) => dedupKey(h.row.連結) === key),
       },
     );
   }
@@ -225,59 +197,5 @@ export class GoogleSheetsStorage implements Storage {
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {
     const rows = await this.readAll();
     return computeStats(rows, opts);
-  }
-
-  /** 取本分頁的數字 sheetId(gid),deleteDimension 需要它(range 字串不行)。 */
-  private async getSheetGid(): Promise<number> {
-    const meta = await withRetry("取分頁 gid", () =>
-      this.sheets.spreadsheets.get({
-        spreadsheetId: this.sheetId,
-        fields: "sheets.properties(title,sheetId)",
-      }),
-    );
-    const sheet = (meta.data.sheets ?? []).find(
-      (s) => s.properties?.title === this.sheetName,
-    );
-    const gid = sheet?.properties?.sheetId;
-    if (gid == null) throw new Error(`找不到分頁 ${this.sheetName} 的 sheetId`);
-    return gid;
-  }
-
-  async pruneOlderThan(days: number, opts?: { dryRun?: boolean }): Promise<number> {
-    const dateIdx = STAGING_COLUMNS.indexOf("DATE");
-    // 用既有 rawRows():帶正確實體列號、空白列已跳過。
-    const victims = (await this.rawRows()).filter((r) => {
-      const age = ageInDays(r.cells[dateIdx] ?? "");
-      // 窗外 = 年齡有限且 > days。Infinity(DATE 解析不出)一律保留(與去重一致)。
-      return Number.isFinite(age) && age > days;
-    });
-    if (opts?.dryRun || victims.length === 0) return victims.length;
-
-    const gid = await this.getSheetGid();
-    // rowNumber(1-based,含表頭)→ 0-based dimension index。把連續列合併成區段,
-    // 再「由下往上」刪(startIndex 大的先刪)—— 刪一段不會位移它上面的列號,故捕捉到的
-    // 實體列號全程有效,不會刪一列後位移誤刪。
-    const idxAsc = victims.map((v) => v.rowNumber - 1).sort((a, b) => a - b);
-    const ranges: { start: number; end: number }[] = []; // [start, end) 半開
-    for (const i of idxAsc) {
-      const last = ranges[ranges.length - 1];
-      if (last && i === last.end) last.end = i + 1; // 接續 → 延長區段
-      else ranges.push({ start: i, end: i + 1 });
-    }
-    ranges.sort((a, b) => b.start - a.start); // 由下往上
-
-    await withRetry("prune 刪列", () =>
-      this.sheets.spreadsheets.batchUpdate({
-        spreadsheetId: this.sheetId,
-        requestBody: {
-          requests: ranges.map((r) => ({
-            deleteDimension: {
-              range: { sheetId: gid, dimension: "ROWS", startIndex: r.start, endIndex: r.end },
-            },
-          })),
-        },
-      }),
-    );
-    return victims.length;
   }
 }

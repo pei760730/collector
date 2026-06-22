@@ -1,12 +1,12 @@
 /**
  * 從資料列算統計 —— 純函式,memory / googleSheets 共用。
  */
-import type { StagingRow } from "../types.js";
+import type { RefRow } from "../types.js";
 import type { StatsSummary } from "./Storage.js";
 import { ageInDays } from "../utils/date.js";
 
 export function computeStats(
-  rows: StagingRow[],
+  rows: RefRow[],
   opts: { recentLimit: number; nowMs: number },
 ): StatsSummary {
   const byPlatform: Record<string, number> = {};
@@ -14,10 +14,10 @@ export function computeStats(
   let addedThisMonth = 0;
 
   for (const r of rows) {
-    const p = r.PLATFORM || "未知";
+    const p = r.平台 || "未知";
     byPlatform[p] = (byPlatform[p] ?? 0) + 1;
 
-    const age = ageInDays(r.DATE, opts.nowMs);
+    const age = ageInDays(r.加入日期, opts.nowMs);
     if (age <= 7) addedThisWeek++;
     if (age <= 30) addedThisMonth++;
   }

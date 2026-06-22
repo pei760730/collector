@@ -3,12 +3,16 @@
  * 改進#2:n8n 版用 MarkdownV2 但沒跳脫,含 . - ( ) 會發送失敗;
  * 純文字最穩,emoji 照常顯示,不必跳脫。
  */
-import type { Platform, StagingRow } from "../types.js";
+import { PLATFORM_CODE, type Platform, type RefRow } from "../types.js";
 import { PLATFORM_ICON } from "../pipeline/detectPlatform.js";
 
-/** 平台 → emoji(衍生,不再存欄)。未知平台給個中性點。 */
-function iconFor(platform: string): string {
-  return PLATFORM_ICON[platform as Platform] ?? "•";
+/** 小寫平台碼 → emoji。row.平台 存的是碼(tiktok…),不是顯示名。 */
+const ICON_BY_CODE: Record<string, string> = Object.fromEntries(
+  (Object.keys(PLATFORM_CODE) as Platform[]).map((p) => [PLATFORM_CODE[p], PLATFORM_ICON[p]]),
+);
+
+function iconFor(code: string): string {
+  return ICON_BY_CODE[code] ?? "•";
 }
 
 export function formatErrorMsg(): string {
@@ -22,17 +26,20 @@ export function formatErrorMsg(): string {
   ].join("\n");
 }
 
-export function successMsg(row: StagingRow, opts: { unsupported: boolean; isShortUrl: boolean }): string {
+export function successMsg(
+  row: RefRow,
+  opts: { unsupported: boolean; isShortUrl: boolean; note?: string },
+): string {
   const lines = [
-    `${iconFor(row.PLATFORM)} 已收進暫存區`,
-    `平台:${row.PLATFORM}`,
-    `VIDEO_ID:${row.VIDEO_ID}`,
+    `${iconFor(row.平台)} 已收進參考池`,
+    `平台:${row.平台}`,
+    `連結:${row.連結}`,
   ];
-  if (row.NOTE) lines.push(`備註:${row.NOTE}`);
-  lines.push(`日期:${row.DATE}`);
+  if (opts.note) lines.push(`備註:${opts.note}`);
+  lines.push(`加入日期:${row.加入日期}`);
   if (opts.unsupported) {
-    // fallback 猜平台時 video id 也抓不到 → unsupported,此訊息已涵蓋「可能不準」。
-    lines.push("⚠️ 這個平台抓不到 video ID,先以 unknown 收錄。");
+    // 抓不到 video id(平台不支援 / fallback):去重退回連結路徑,仍會收;提醒可能不準。
+    lines.push("⚠️ 這個平台抓不到 video ID,以連結本身去重收錄。");
   }
   if (opts.isShortUrl) {
     lines.push("🔗 偵測到短網址,已標記。");
@@ -40,17 +47,14 @@ export function successMsg(row: StagingRow, opts: { unsupported: boolean; isShor
   return lines.join("\n");
 }
 
-export function duplicateMsg(existing: StagingRow): string {
+export function duplicateMsg(existing: RefRow): string {
   return [
     "♻️ 這支已經收過了,沒有重複寫入。",
-    `VIDEO_ID:${existing.VIDEO_ID}`,
-    `首次提交:${existing.DATE}`,
-    existing.NOTE ? `當時備註:${existing.NOTE}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    `連結:${existing.連結}`,
+    `首次加入:${existing.加入日期}`,
+  ].join("\n");
 }
 
 export function saveErrorMsg(detail: string): string {
-  return ["❌ 寫入失敗,沒有存進暫存區。", `原因:${detail}`].join("\n");
+  return ["❌ 寫入失敗,沒有存進參考池。", `原因:${detail}`].join("\n");
 }

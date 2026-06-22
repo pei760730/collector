@@ -14,7 +14,7 @@ import { logger } from "../utils/logger.js";
 
 /** drain 模式注入的鉤子;常駐版不傳(undefined)。 */
 export interface BotHooks {
-  /** 某筆寫入暫存區失敗時呼叫(drain 用來停在當前 offset、不 ack)。 */
+  /** 某筆寫入參考池失敗時呼叫(drain 用來停在當前 offset、不 ack)。 */
   onPersistError?: () => void;
 }
 
@@ -41,7 +41,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
 
   // /start /help —— 簡短說明
   bot.start((ctx) =>
-    ctx.reply("貼「短影音連結 + 備註」我就幫你收進暫存區。指令:/stats /pick"),
+    ctx.reply("貼「短影音連結 + 備註」我就幫你收進參考池。指令:/stats /pick"),
   );
   bot.help((ctx) =>
     ctx.reply(
@@ -88,7 +88,6 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
         { text, senderName: ctx.from?.first_name },
         {
           storage,
-          dedupePeriodDays: config.dedupePeriodDays,
           expandShortUrls: config.expandShortUrls,
           onPersistError: hooks?.onPersistError,
         },

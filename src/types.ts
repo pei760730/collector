@@ -1,9 +1,14 @@
 /**
- * 共用型別 + Google Sheet「暫存區」schema(SSOT)。
+ * 共用型別 + Google Sheet「參考池」schema(SSOT)。
  * 改欄位只改這裡,storage / messages / handlers 都引用這份。
+ *
+ * 2026-06-22:bot 改成「直接寫 voc 的『參考池』分頁」(廢「暫存區」中間層)。
+ * voc 端已砍掉 sync-pool(暫存區→參考池 每日複製),bot 與 voc 用同一張表、同一個 SA,
+ * 所以 bot 直寫參考池就是最終狀態,不再有複製儀式。參考池 5 欄欄名/順序必須與
+ * voc `schema.REFS` 完全對上(契約由 tests/contract.test.ts 守)。
  */
 
-/** 支援的平台代碼(寫進 PLATFORM 欄的顯示名)。 */
+/** 支援的平台代碼(內部判定用的顯示名;寫進 Sheet 的是 PLATFORM_CODE 的小寫碼)。 */
 export type Platform =
   | "TikTok"
   | "YouTube"
@@ -19,13 +24,30 @@ export type Platform =
 export type Confidence = "high" | "medium" | "low";
 export type DetectionMethod = "domain_match" | "fallback" | "error";
 
+/**
+ * 平台顯示名 → voc 參考池統一用的小寫代碼。
+ * voc(及全系統下游)用小寫碼篩選/統計;bot 是參考池的唯一寫入者,寫入前一律轉碼。
+ * 8 個正式平台對到 voc 認得的碼;Unknown 落 "unknown"(8 碼之外的唯一例外)。
+ */
+export const PLATFORM_CODE: Record<Platform, string> = {
+  TikTok: "tiktok",
+  YouTube: "youtube",
+  Facebook: "facebook",
+  Instagram: "instagram",
+  Threads: "threads",
+  X: "x",
+  抖音: "douyin",
+  小紅書: "xiaohongshu",
+  Unknown: "unknown",
+};
+
 /** Parse 階段輸出。 */
 export interface ParsedMessage {
   /** 原始(未清理)網址,給 cleanUrl 當輸入。 */
   rawUrl: string;
-  /** 訊息文字移除網址後的備註,寫進 NOTE。 */
+  /** 訊息文字移除網址後的備註(供回覆顯示;參考池無備註欄,梗在 voc pick 時落「待拍.備註」)。 */
   note: string;
-  /** 提交者(Telegram from.first_name);暫存區瘦身後不再存欄,保留供未來多人辨識用。 */
+  /** 提交者(Telegram from.first_name);參考池不存,保留供未來多人辨識用。 */
   sender: string;
 }
 
@@ -53,29 +75,25 @@ export interface VideoIdInfo {
 }
 
 /**
- * 「暫存區」一列資料 —— 欄位順序即 Sheet 表頭順序,不要改順序。
+ * 「參考池」一列資料 —— 欄位即 voc `schema.REFS`,鍵名/順序就是 Sheet 表頭,不要改。
  *
- * 第一性原理瘦身(2026-06-20):暫存區只存「捕捉到的不可化約事實」,衍生/診斷/過時欄
- * 一律砍,智慧留下游(參考池/待拍/完成 + voc learn)。歷次已砍:
- * - 第一輪(14→8):ID(≡VIDEO_ID)、AGE(衍生)、PLATFORM_ICON(衍生)、ERROR_LOG(永空)、
- *   PLATFORM_CONFIDENCE / DETECTION_METHOD(診斷,下游不消費)
- * - 第二輪(8→5):STATUS(只服務已退役的 /move,voc 不讀)、SENDER(永遠 Pei,單人無辨識值)、
- *   VIDEO_REF(voc 只當 CLEAN_URL 空時後備,CLEAN_URL 幾乎不空 → 冗餘)
- * voc 按欄名讀 PLATFORM/CLEAN_URL/DATE,皆保留 → 不受影響。
+ * voc 參考池 5 欄(2026-06-22 契約):
+ * - id        :可留空(voc `pick` 搬待拍時會用 R 編碼;bot 寫入留空,讓 voc 統一編號)。
+ * - 平台      :小寫碼(PLATFORM_CODE)。
+ * - 連結      :乾淨連結 —— 「打開」+ 去重的唯一 key。
+ * - 挑        :checkbox,留空(=還沒挑);voc `pick` 掃打勾的搬待拍。
+ * - 加入日期  :ISO YYYY-MM-DD(新鮮度;voc `normalize_date` 也吃 ISO)。
+ *
+ * NOTE / VIDEO_ID / SENDER 等原始細節參考池不存(voc 設計如此):梗在 pick 時落「待拍.備註」,
+ * 去重 key 寫入前由連結即時推導(見 pipeline `dedupKey`),不需存欄。
  */
-export interface StagingRow {
-  PLATFORM: string;
-  DATE: string; // YYYY/M/D (Asia/Taipei)
-  NOTE: string;
-  CLEAN_URL: string;
-  VIDEO_ID: string; // 帶平台前綴的唯一 id,也是去重 key
+export interface RefRow {
+  id: string;
+  平台: string;
+  連結: string;
+  挑: string;
+  加入日期: string; // ISO YYYY-MM-DD (Asia/Taipei)
 }
 
-/** 「暫存區」表頭順序(SSOT)。googleSheets 與 doctor 都用這個。 */
-export const STAGING_COLUMNS: (keyof StagingRow)[] = [
-  "PLATFORM",
-  "DATE",
-  "NOTE",
-  "CLEAN_URL",
-  "VIDEO_ID",
-];
+/** 「參考池」表頭順序(SSOT),與 voc schema.REFS.columns 對齊。 */
+export const POOL_COLUMNS: (keyof RefRow)[] = ["id", "平台", "連結", "挑", "加入日期"];

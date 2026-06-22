@@ -1,29 +1,35 @@
 import { describe, it, expect } from "vitest";
 import { runCollect } from "../src/bot/handlers/collect.js";
 import { MemoryStorage } from "../src/storage/memory.js";
-import { todayTaipei } from "../src/utils/date.js";
-import type { StagingRow } from "../src/types.js";
+import { todayIsoTaipei } from "../src/utils/date.js";
+import type { RefRow } from "../src/types.js";
 
-function deps(storage: MemoryStorage, dedupePeriodDays = 180) {
-  return { storage, dedupePeriodDays, expandShortUrls: false };
+function deps(storage: MemoryStorage) {
+  return { storage, expandShortUrls: false };
 }
 
 describe("runCollect", () => {
-  it("合法連結 → 寫入 + 成功訊息", async () => {
+  it("合法連結 → 寫入參考池(5 欄、平台小寫)+ 成功訊息", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect(
       { text: "https://www.tiktok.com/@u/video/7234567890 好笑", senderName: "Pei" },
       deps(storage),
     );
     expect(r.error).toBeUndefined();
-    expect(r.reply).toContain("已收進暫存區");
+    expect(r.reply).toContain("已收進參考池");
+    expect(r.reply).toContain("好笑"); // 備註顯示在回覆(不存表)
     const all = await storage.readAll();
     expect(all).toHaveLength(1);
-    expect(all[0]!.VIDEO_ID).toBe("tiktok_7234567890");
-    expect(all[0]!.NOTE).toBe("好笑");
+    const row = all[0]!;
+    expect(Object.keys(row)).toEqual(["id", "平台", "連結", "挑", "加入日期"]);
+    expect(row.平台).toBe("tiktok"); // 小寫碼
+    expect(row.連結).toBe("https://www.tiktok.com/@u/video/7234567890");
+    expect(row.id).toBe(""); // 留空,voc pick 統一編號
+    expect(row.挑).toBe(""); // 留空 = 還沒挑
+    expect(row.加入日期).toBe(todayIsoTaipei()); // ISO YYYY-MM-DD
   });
 
-  it("N 天內重複 → 不寫第二筆", async () => {
+  it("同連結重複 → 不寫第二筆", async () => {
     const storage = new MemoryStorage();
     const msg = { text: "https://youtu.be/dQw4w9WgXcQ 影片", senderName: "Pei" };
     await runCollect(msg, deps(storage));
@@ -32,35 +38,41 @@ describe("runCollect", () => {
     expect(await storage.readAll()).toHaveLength(1);
   });
 
-  it("超出去重窗 → 視為新筆", async () => {
-    const old: StagingRow = {
-      PLATFORM: "YouTube",
-      DATE: "2020/1/1",
-      NOTE: "舊的",
-      CLEAN_URL: "https://youtu.be/dQw4w9WgXcQ",
-      VIDEO_ID: "yt_dQw4w9WgXcQ",
-    };
-    const storage = new MemoryStorage([old]);
-    const r = await runCollect(
-      { text: "https://youtu.be/dQw4w9WgXcQ 新的", senderName: "Pei" },
-      deps(storage, 180),
+  it("同支 YouTube 影片不同形態(youtu.be / watch?v= / shorts)→ 收斂成一筆", async () => {
+    const storage = new MemoryStorage();
+    await runCollect({ text: "https://youtu.be/dQw4w9WgXcQ a", senderName: "Pei" }, deps(storage));
+    const r2 = await runCollect(
+      { text: "https://www.youtube.com/watch?v=dQw4w9WgXcQ b", senderName: "Pei" },
+      deps(storage),
     );
-    expect(r.reply).toContain("已收進暫存區");
+    const r3 = await runCollect(
+      { text: "https://www.youtube.com/shorts/dQw4w9WgXcQ c", senderName: "Pei" },
+      deps(storage),
+    );
+    expect(r2.reply).toContain("已經收過");
+    expect(r3.reply).toContain("已經收過");
+    expect(await storage.readAll()).toHaveLength(1);
+  });
+
+  it("不同影片 → 各自收一筆", async () => {
+    const storage = new MemoryStorage();
+    await runCollect({ text: "https://youtu.be/aaaaaaaaaaa x", senderName: "Pei" }, deps(storage));
+    await runCollect({ text: "https://youtu.be/bbbbbbbbbbb y", senderName: "Pei" }, deps(storage));
     expect(await storage.readAll()).toHaveLength(2);
   });
 
-  it("DATE 壞掉(解析不出)的同 VIDEO_ID 仍當重複,不重寫", async () => {
-    const broken: StagingRow = {
-      PLATFORM: "YouTube",
-      DATE: "壞掉的日期",
-      NOTE: "舊的",
-      CLEAN_URL: "https://youtu.be/dQw4w9WgXcQ",
-      VIDEO_ID: "yt_dQw4w9WgXcQ",
+  it("既有列已在參考池 → 同連結視為重複,不重寫", async () => {
+    const seed: RefRow = {
+      id: "R0007",
+      平台: "youtube",
+      連結: "https://youtu.be/dQw4w9WgXcQ",
+      挑: "",
+      加入日期: "2025-01-01",
     };
-    const storage = new MemoryStorage([broken]);
+    const storage = new MemoryStorage([seed]);
     const r = await runCollect(
       { text: "https://youtu.be/dQw4w9WgXcQ 又貼一次", senderName: "Pei" },
-      deps(storage, 180),
+      deps(storage),
     );
     expect(r.reply).toContain("已經收過");
     expect(await storage.readAll()).toHaveLength(1);
@@ -83,44 +95,40 @@ describe("runCollect", () => {
       deps(storage),
     );
     const row = (await storage.readAll())[0]!;
-    expect(row.CLEAN_URL).toContain("www.tiktok.com");
-    expect(row.CLEAN_URL).not.toContain("utm_source");
-    expect(row.CLEAN_URL).not.toContain("fbclid");
+    expect(row.連結).toContain("www.tiktok.com");
+    expect(row.連結).not.toContain("utm_source");
+    expect(row.連結).not.toContain("fbclid");
   });
 
-  it("不支援平台(FB)→ unknown 但仍寫入", async () => {
+  it("不支援平台(FB)→ 平台 facebook、仍寫入(連結 key 去重)", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect(
       { text: "https://fb.watch/abc note", senderName: "Pei" },
       deps(storage),
     );
-    expect(r.reply).toContain("已收進暫存區");
+    expect(r.reply).toContain("已收進參考池");
     const row = (await storage.readAll())[0]!;
-    expect(row.VIDEO_ID).toMatch(/^unknown_/);
-    expect(row.PLATFORM).toBe("Facebook");
+    expect(row.平台).toBe("facebook");
   });
 
-  it("未知網域 fallback → 不造假 ig_ id(標 unknown)", async () => {
+  it("未知網域 fallback → 平台 unknown(不誤猜 instagram)", async () => {
     const storage = new MemoryStorage();
     await runCollect(
       { text: "https://random.com/p/whatever 測試", senderName: "Pei" },
       deps(storage),
     );
     const row = (await storage.readAll())[0]!;
-    expect(row.VIDEO_ID).toMatch(/^unknown_/);
-    expect(row.VIDEO_ID).not.toMatch(/^ig_/);
-    expect(row.PLATFORM).toBe("Unknown"); // 不再誤猜 Instagram
+    expect(row.平台).toBe("unknown");
   });
 
-  it("FB 轉址包住 IG reel → 解開後正確收成 Instagram + ig_(非 Instagram/unknown_)", async () => {
+  it("FB 轉址包住 IG reel → 解開後正確收成 instagram、連結=內層", async () => {
     const storage = new MemoryStorage();
     const inner = "https://www.instagram.com/reel/CxYz_-1";
     const wrapped = `https://l.facebook.com/l.php?u=${encodeURIComponent(inner)}&fbclid=abc`;
     await runCollect({ text: `${wrapped} 分享來的`, senderName: "Pei" }, deps(storage));
     const row = (await storage.readAll())[0]!;
-    expect(row.PLATFORM).toBe("Instagram");
-    expect(row.VIDEO_ID).toBe("ig_CxYz_-1");
-    expect(row.CLEAN_URL).toBe(inner);
+    expect(row.平台).toBe("instagram");
+    expect(row.連結).toBe(inner);
   });
 
   it("寫入失敗 → 回錯誤 + error 通知", async () => {
@@ -158,14 +166,5 @@ describe("runCollect", () => {
       { ...deps(storage), onPersistError: () => (persistFailed = true) },
     );
     expect(persistFailed).toBe(false);
-  });
-
-  it("DATE 寫今天(台北)", async () => {
-    const storage = new MemoryStorage();
-    await runCollect(
-      { text: "https://youtu.be/dQw4w9WgXcQ x", senderName: "Pei" },
-      deps(storage),
-    );
-    expect((await storage.readAll())[0]!.DATE).toBe(todayTaipei());
   });
 });

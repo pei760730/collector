@@ -13,7 +13,6 @@ function memoryConfig(): Config {
     webhook: { domain: "", path: "/telegraf", port: 8080 },
     google: null, // memory 乾跑:pool=null,不碰真表
     errorChatId: "",
-    dedupePeriodDays: 180,
     expandShortUrls: false,
     logLevel: "info",
   };
@@ -70,9 +69,10 @@ describe("router caption routing", () => {
 
     const all = await storage.readAll();
     expect(all).toHaveLength(1);
-    expect(all[0]!.VIDEO_ID).toBe("tiktok_7234567890");
-    expect(all[0]!.NOTE).toBe("轉傳的");
-    expect(sent.some((t) => t.includes("已收進暫存區"))).toBe(true);
+    expect(all[0]!.平台).toBe("tiktok");
+    expect(all[0]!.連結).toBe("https://www.tiktok.com/@u/video/7234567890");
+    expect(sent.some((t) => t.includes("已收進參考池"))).toBe(true);
+    expect(sent.some((t) => t.includes("轉傳的"))).toBe(true); // 備註顯示在回覆
   });
 
   it("媒體 caption 沒有連結 → 回提示、不寫入(有回覆即非靜默)", async () => {
