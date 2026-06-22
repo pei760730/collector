@@ -1,6 +1,6 @@
 name: collect
 
-# 定時把 Telegram 這段時間囤的訊息撈乾、解析、寫進「暫存區」,然後結束。
+# 定時把 Telegram 這段時間囤的訊息撈乾、解析、寫進「參考池」,然後結束。
 # 取代常駐機器:repo 是 public → Actions 免費額度無上限,$0。
 # Telegram 保留未領更新約 24h,只要間隔 < 24h 就不漏訊息。
 on:

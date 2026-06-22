@@ -23,7 +23,7 @@ async function main(): Promise<void> {
     storage = new GoogleSheetsStorage({
       credentials: config.google.credentials,
       sheetId: config.google.sheetId,
-      sheetName: config.google.stagingSheetName,
+      sheetName: config.google.poolSheetName,
     });
   }
 

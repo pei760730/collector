@@ -7,21 +7,44 @@ import { parseMessage, type ParseInput } from "./parse.js";
 import { cleanUrl } from "./cleanUrl.js";
 import { detectPlatform } from "./detectPlatform.js";
 import { extractVideoId } from "./extractVideoId.js";
-import type { ParsedMessage, StagingRow } from "../types.js";
-import { todayTaipei } from "../utils/date.js";
+import { PLATFORM_CODE, type ParsedMessage, type RefRow } from "../types.js";
+import { todayIsoTaipei } from "../utils/date.js";
 
 export { NoUrlError } from "./parse.js";
 
 export interface Draft {
-  row: StagingRow;
-  /** 去重 key。 */
-  videoId: string;
+  row: RefRow;
+  /** 去重 key(由連結即時推導,參考池不存欄)。 */
+  dedupKey: string;
+  /** 抓不到 video id(平台不支援 / 解析失敗)→ 回覆提醒「先以 unknown 收錄」。 */
   unsupported: boolean;
   isShortUrl: boolean;
+  /** 這次訊息的備註(參考池不存,只給回覆顯示用)。 */
+  note: string;
 }
 
 /**
- * 從訊息產出一筆「暫存區」草稿列(尚未去重、尚未寫入)。
+ * 連結 → 去重 key(對齊 voc `sync._dedup_key`,跨 repo 行為一致)。
+ *
+ * 優先用「平台:影片id」當 key —— YouTube `watch?v=AAA` 與 `watch?v=BBB` 不會在砍 query 後
+ * 塌成同一個 `.../watch` 被誤判重複;同支影片的 `youtu.be/`、`shorts/`、`watch?v=` 反而收斂
+ * 成同一 key,跨形態也擋得住重複。抽不到影片id(平台不支援 / 連結沒帶 id)才退回路徑 key:
+ * 砍 query/fragment、去尾斜線、lower。
+ *
+ * 候選列與既有列都走這支(吃同樣的乾淨連結)→ 兩邊算出的 key 一致才能正確去重。
+ */
+export function dedupKey(url: string): string {
+  const u = (url ?? "").trim();
+  const platform = detectPlatform(u);
+  if (platform.method === "domain_match") {
+    const vid = extractVideoId(platform.platform, u);
+    if (!vid.unsupported) return vid.videoId.trim().toLowerCase();
+  }
+  return u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+}
+
+/**
+ * 從訊息產出一筆「參考池」草稿列(尚未去重、尚未寫入)。
  * @param now 可注入時間(epoch ms),預設 Date.now,利於測試。
  */
 export function buildDraft(input: ParseInput, now: () => number = Date.now): Draft {
@@ -35,24 +58,25 @@ export function buildDraft(input: ParseInput, now: () => number = Date.now): Dra
 export function assembleDraft(parsed: ParsedMessage, now: () => number = Date.now): Draft {
   const cleaned = cleanUrl(parsed.rawUrl);
   const platform = detectPlatform(cleaned.cleanUrl);
-  // 只在「真的比對到網域」時抽 id。fallback(猜 Instagram)/error 不抽,
-  // 否則 random.com/p/xxx 會被造出假的 ig_xxx 並當成可去重的正常影片。
+  // 只在「真的比對到網域」時抽 id,判斷 unsupported(給回覆提示)。fallback/error 一律 unsupported。
   const vid =
     platform.method === "domain_match"
       ? extractVideoId(platform.platform, cleaned.cleanUrl, now)
-      : { videoId: `unknown_${now()}`, unsupported: true };
+      : { videoId: "", unsupported: true };
 
-  const date = todayTaipei(now());
-  // 改進#1:VIDEO_ID 不帶多餘空白(直接用乾淨字串)
-  const videoId = vid.videoId.trim();
-
-  const row: StagingRow = {
-    PLATFORM: platform.platform,
-    DATE: date,
-    NOTE: parsed.note,
-    CLEAN_URL: cleaned.cleanUrl,
-    VIDEO_ID: videoId,
+  const row: RefRow = {
+    id: "", // 留空:由 voc pick 統一編 R 號
+    平台: PLATFORM_CODE[platform.platform],
+    連結: cleaned.cleanUrl,
+    挑: "", // 留空 = 還沒挑
+    加入日期: todayIsoTaipei(now()),
   };
 
-  return { row, videoId, unsupported: vid.unsupported, isShortUrl: cleaned.isShortUrl };
+  return {
+    row,
+    dedupKey: dedupKey(cleaned.cleanUrl),
+    unsupported: vid.unsupported,
+    isShortUrl: cleaned.isShortUrl,
+    note: parsed.note,
+  };
 }

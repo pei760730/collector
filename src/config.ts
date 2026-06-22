@@ -67,12 +67,10 @@ export interface Config {
     /** 解析後的 service account 憑證物件。 */
     credentials: { client_email: string; private_key: string };
     sheetId: string;
-    stagingSheetName: string;
-    /** voc 的「參考池」分頁名(同一張表);/pick 打勾用。 */
+    /** voc 的「參考池」分頁名(同一張表);收錄寫入 + /pick 打勾都用它。 */
     poolSheetName: string;
   } | null;
   errorChatId: string;
-  dedupePeriodDays: number;
   expandShortUrls: boolean;
   logLevel: string;
 }
@@ -128,7 +126,6 @@ export function loadConfig(): Config {
       : {
           credentials: loadGoogleCredentials(),
           sheetId: required("GOOGLE_SHEET_ID"),
-          stagingSheetName: optional("STAGING_SHEET_NAME", "暫存區"),
           poolSheetName: optional("POOL_SHEET_NAME", "參考池"),
         };
   cached = {
@@ -142,7 +139,6 @@ export function loadConfig(): Config {
     },
     google,
     errorChatId: optional("ERROR_CHAT_ID", ""),
-    dedupePeriodDays: numEnv("DEDUPE_PERIOD_DAYS", 14, { min: 0 }),
     expandShortUrls: boolEnv("EXPAND_SHORT_URLS", false),
     logLevel: optional("LOG_LEVEL", "info"),
   };

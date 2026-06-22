@@ -2,64 +2,35 @@
  * 記憶體版 Storage —— 給單元測試與本機 dry-run 用,不碰網路。
  */
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
-import type { StagingRow } from "../types.js";
-import { STAGING_COLUMNS } from "../types.js";
+import type { RefRow } from "../types.js";
+import { POOL_COLUMNS } from "../types.js";
 import { computeStats } from "./computeStats.js";
-import { ageInDays } from "../utils/date.js";
 
 export class MemoryStorage implements Storage {
-  private rows: StagingRow[] = [];
+  private rows: RefRow[] = [];
 
-  constructor(seed: StagingRow[] = []) {
+  constructor(seed: RefRow[] = []) {
     this.rows = [...seed];
   }
 
   async ensureHeader(): Promise<void> {
-    // 記憶體版用固定 schema,無需建表頭。引用 STAGING_COLUMNS 確保 schema 對齊。
-    void STAGING_COLUMNS;
+    // 記憶體版用固定 schema,無需建表頭。引用 POOL_COLUMNS 確保 schema 對齊。
+    void POOL_COLUMNS;
   }
 
-  async findByVideoId(videoId: string, withinDays?: number): Promise<DuplicateHit | null> {
-    const key = videoId.trim();
-    if (!key) return null; // 空 key 不去重
-    for (let i = 0; i < this.rows.length; i++) {
-      const r = this.rows[i]!;
-      if (r.VIDEO_ID.trim() !== key) continue;
-      // 與 GoogleSheetsStorage 一致:日期解析不出(Infinity)不可略過,
-      // 否則 DATE 被改壞的同 VIDEO_ID 列會被當不存在而重寫。
-      const age = ageInDays(r.DATE);
-      if (withinDays != null && Number.isFinite(age) && age > withinDays) continue;
-      return { row: r, rowNumber: i + 2 }; // +2:表頭 + 1-based
-    }
-    return null;
-  }
-
-  async append(row: StagingRow): Promise<void> {
+  async append(row: RefRow): Promise<void> {
     this.rows.push(row);
   }
 
-  async readAll(): Promise<StagingRow[]> {
+  async readAll(): Promise<RefRow[]> {
     return [...this.rows];
   }
 
   async readRows(): Promise<DuplicateHit[]> {
-    return this.rows.map((row, i) => ({ row, rowNumber: i + 2 }));
+    return this.rows.map((row, i) => ({ row, rowNumber: i + 2 })); // +2:表頭 + 1-based
   }
 
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {
     return computeStats(this.rows, opts);
-  }
-
-  async pruneOlderThan(days: number, opts?: { dryRun?: boolean }): Promise<number> {
-    // 窗外 = 年齡有限且 > days。Infinity(DATE 解析不出)一律保留,與去重一致。
-    const isVictim = (r: StagingRow): boolean => {
-      const age = ageInDays(r.DATE);
-      return Number.isFinite(age) && age > days;
-    };
-    const count = this.rows.filter(isVictim).length;
-    if (!opts?.dryRun && count > 0) {
-      this.rows = this.rows.filter((r) => !isVictim(r));
-    }
-    return count;
   }
 }

@@ -4,7 +4,7 @@
  * 方便用 MemoryStorage 寫整合測試。Telegraf wiring 在 router.ts。
  */
 import { parseMessage, NoUrlError } from "../../pipeline/parse.js";
-import { assembleDraft } from "../../pipeline/index.js";
+import { assembleDraft, dedupKey } from "../../pipeline/index.js";
 import { hasShortHost } from "../../pipeline/cleanUrl.js";
 import type { Storage } from "../../storage/Storage.js";
 import { expandShortUrl } from "../../utils/expandUrl.js";
@@ -30,11 +30,10 @@ import {
 
 export interface CollectDeps {
   storage: Storage;
-  dedupePeriodDays: number;
   expandShortUrls: boolean;
   now?: () => number;
   /**
-   * 寫入暫存區失敗(可重試)時呼叫 —— 給 drain 模式用的 side-channel。
+   * 寫入參考池失敗(可重試)時呼叫 —— 給 drain 模式用的 side-channel。
    * runCollect 仍照常回 {reply, error}(常駐版/測試契約不變);drain 靠這個 callback
    * 得知「這筆沒持久化」,好停在當前 offset、不 ack、下次 cron 重領,避免靜默丟資料。
    */
@@ -74,33 +73,34 @@ export async function runCollect(
 
   const draft = assembleDraft(parsed, now);
 
-  // 去重 + 寫入序列化,避免並發雙寫。unknown_* 視為唯一,不去重。
+  // 去重 + 寫入序列化,避免並發雙寫。去重靠連結即時推導的 key(全表比對、無時間窗,
+  // 對齊 voc:參考池是永久池)。同連結(含同支影片不同形態)只收一次。
   return serialize(async () => {
-    if (!draft.unsupported) {
-      const hit = await deps.storage.findByVideoId(draft.videoId, deps.dedupePeriodDays);
-      if (hit) {
-        return { reply: duplicateMsg(hit.row) };
-      }
+    const existing = await deps.storage.readRows();
+    const hit = existing.find((h) => dedupKey(h.row.連結) === draft.dedupKey);
+    if (hit) {
+      return { reply: duplicateMsg(hit.row) };
     }
 
     try {
       await deps.storage.append(draft.row);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      logger.error("寫入暫存區失敗", err);
+      logger.error("寫入參考池失敗", err);
       // 通知 drain:這筆沒寫成功(可重試)。常駐版沒給 callback → no-op,行為不變。
       deps.onPersistError?.();
       return {
         reply: saveErrorMsg(detail),
-        error: `collect 寫入失敗:${detail}｜url=${draft.row.CLEAN_URL}`,
+        error: `collect 寫入失敗:${detail}｜url=${draft.row.連結}`,
       };
     }
 
-    logger.info(`收錄 ${draft.row.PLATFORM} ${draft.videoId}`);
+    logger.info(`收錄 ${draft.row.平台} ${draft.row.連結}`);
     return {
       reply: successMsg(draft.row, {
         unsupported: draft.unsupported,
         isShortUrl: draft.isShortUrl,
+        note: draft.note,
       }),
     };
   });
