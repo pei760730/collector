@@ -18,6 +18,21 @@ export function tidyUrl(raw: string): string {
   return raw.replace(NON_URL_CHAR, "").replace(TRAILING_PUNCT, "");
 }
 
+// 備註頭部:連結與備註之間殘留的分隔標點(含 CJK)一律剝掉,如 `…/abc。健身梗` 的 `。`、
+// 包裹連結的 `(…)` 殘餘。含句末語氣標點(. , ! ?。!?)以便清掉純標點殘渣。
+const NOTE_LEAD_SEP = /^[\s.,;:!?、。，．！？；：（）()[\]{}<>「」『』《》〈〉"'　]+/u;
+// 備註尾部:只剝括號/引號/分隔標點與空白,**保留**句末語氣標點(備註「哈哈!」的 `!` 要留)。
+const NOTE_TRAIL_SEP = /[\s、，；：（）()[\]{}<>「」『』《》〈〉"'　]+$/u;
+
+/** 清理備註:收斂連續空白、剝頭尾殘留分隔標點(尾端保留語氣標點)。 */
+export function cleanNote(s: string): string {
+  return s
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(NOTE_LEAD_SEP, "")
+    .replace(NOTE_TRAIL_SEP, "")
+    .trim();
+}
+
 export class NoUrlError extends Error {
   constructor() {
     super("訊息中找不到網址");
@@ -40,14 +55,18 @@ export function parseMessage(input: ParseInput): ParsedMessage {
   if (!match) {
     throw new NoUrlError();
   }
-  const rawUrl = tidyUrl(match[0]);
+  const token = match[0];
+  const rawUrl = tidyUrl(token);
   if (!/^https?:\/\/\S/.test(rawUrl)) {
     // 整段被剝光(例如 `https://` 後面全是標點)→ 視為沒有有效網址
     throw new NoUrlError();
   }
-  // 備註 = 訊息移除該(已修乾淨的)網址後 trim。rawUrl 是原 token 的前綴,
-  // 被截掉的尾巴(備註正文)會自然留在 note 裡。
-  const note = text.replace(rawUrl, "").trim();
+  // 備註 = 用「位置」切掉被匹配的整個 token,再把 tidyUrl 從 token 尾端截掉的備註正文補回。
+  // 不用 text.replace(rawUrl):replace 只換首個出現、且會誤切備註裡與 URL 相同的片段。
+  const before = text.slice(0, match.index ?? 0);
+  const after = text.slice((match.index ?? 0) + token.length);
+  const urlTail = token.slice(rawUrl.length); // tidyUrl 砍掉的尾段(備註開頭 / 包裹標點)
+  const note = cleanNote(`${before}${urlTail}${after}`);
   // 改進#5:SENDER 不再寫死 'Pei',用真實提交者,沒有才 unknown
   const sender =
     input.senderName && input.senderName.trim() !== ""

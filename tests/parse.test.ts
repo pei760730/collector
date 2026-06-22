@@ -45,4 +45,27 @@ describe("parseMessage", () => {
   it("https:// 後面全是標點 → 視為沒網址", () => {
     expect(() => parseMessage({ text: "https://。。。" })).toThrow(NoUrlError);
   });
+
+  it("連結直接黏 CJK 備註 → 備註不留開頭分隔標點", () => {
+    const r = parseMessage({ text: "https://youtu.be/dQw4w9WgXcQ。健身梗" });
+    expect(r.rawUrl).toBe("https://youtu.be/dQw4w9WgXcQ");
+    expect(r.note).toBe("健身梗"); // 不再是「。健身梗」
+  });
+
+  it("連結被括號包住 → 備註不留殘餘括號", () => {
+    const r = parseMessage({ text: "(https://youtu.be/dQw4w9WgXcQ)" });
+    expect(r.rawUrl).toBe("https://youtu.be/dQw4w9WgXcQ");
+    expect(r.note).toBe("");
+  });
+
+  it("備註結尾語氣標點要保留", () => {
+    const r = parseMessage({ text: "https://youtu.be/dQw4w9WgXcQ 太好笑了!" });
+    expect(r.note).toBe("太好笑了!");
+  });
+
+  it("備註裡含與 URL 相同片段不被誤切", () => {
+    const r = parseMessage({ text: "看 https://x.com/a 這個 x.com 帳號" });
+    expect(r.rawUrl).toBe("https://x.com/a");
+    expect(r.note).toBe("看 這個 x.com 帳號");
+  });
 });
