@@ -27,7 +27,7 @@
 | Google Sheets 實作 | `src/storage/googleSheets.ts` |
 | 測試用記憶體 storage | `src/storage/memory.ts` |
 | 收集流程 handler | `src/bot/handlers/collect.ts`(`runCollect`,不依賴 Telegraf) |
-| `/stats` / `/pick` handler | `src/bot/handlers/{stats,pick}.ts`;`/pick` 打勾參考池 `src/storage/poolPick.ts` |
+| `/stats` handler | `src/bot/handlers/stats.ts`(讀參考池統計)。挑片無 bot 指令:在 Sheet 勾「挑」→ GAS 搬待拍 |
 | 指令路由 / 錯誤通知 | `src/bot/router.ts` |
 | 訊息模板 | `src/messages/templates.ts` |
 | 設定 / 環境變數 | `src/config.ts`(範本 `.env.example`) |
@@ -54,7 +54,7 @@
 ## 第五層:待確認(邊做邊修)
 
 - `/stats` 顯示哪些數字 —— 現為預設版,**讀「參考池」**(總筆數+各平台+本週/本月+最近5筆)。注意:已挑走的素材會搬離參考池,故統計反映「目前池中未挑」的素材,不含已挑/已拍。
-- `/move` 已退役(隨第二輪瘦身砍 STATUS 欄一起;`move.ts` 已刪)。改用 `/pick` 打勾流程,詳見第六層。
+- `/move` 已退役(隨第二輪瘦身砍 STATUS 欄一起;`move.ts` 已刪)。`/pick` 也已退役(2026-06-23,見第六層):挑片統一走 Sheet 勾「挑」→ GAS 搬待拍。
 - 短網址展開(`EXPAND_SHORT_URLS`)預設關;要開再驗 redirect 行為。
 
 ## 第六層:與 voc 對接契約(改欄位前先讀!跨 repo)
@@ -65,17 +65,17 @@ bot 是上游:**直接寫** Google 表「**短影音進度N**」(`1V_CaTb…`,= 
 - **同一張表**:bot `GOOGLE_SHEET_ID` 必須 = voc `VOC_SPREADSHEET_ID`(`1V_CaTb…`)。憑證共用 voc 的 `service_account.json`(`voc-sheets@voc-499914`)。
 - **參考池由 voc 擁有,bot 不自建/不改表頭**:voc `init-sheet` 建「參考池」。bot `GoogleSheetsStorage.ensureHeader` 只**驗表頭對齊**,缺分頁 / 表頭不齊一律 fail-fast(不替 voc 動表結構,避免錯欄寫入靜默毀 voc 的池)。
 - **契約欄位 = voc `schema.REFS` 5 欄(改名要兩 repo 一起)**。bot append 用固定欄序硬塞,**欄名 + 順序**都要對上;由 `tests/contract.test.ts` 守(改欄名 → CI 紅):
-  - `id`:bot 寫**留空**(voc `pick` 搬待拍時統一編 R 號)。
+  - `id`:bot 寫**留空**(挑片時 GAS 搬待拍會發 T 號;參考池的 R 號 bot 不發)。
   - `平台`:**小寫碼**(`PLATFORM_CODE`:tiktok/youtube/facebook/instagram/threads/x/douyin/xiaohongshu;認不得 → `unknown`)。voc 全系統用小寫碼。
   - `連結`:乾淨連結 —— 「打開」+ 去重的唯一 key。
-  - `挑`:checkbox,bot 寫**留空**(=還沒挑)。`/pick` 才打 `TRUE`(見下)。
+  - `挑`:checkbox,bot 寫**留空**(=還沒挑)。人在 Sheet 勾它 → GAS 即時搬待拍。
   - `加入日期`:ISO `YYYY-MM-DD`(`todayIsoTaipei`;voc `normalize_date` 也吃 ISO)。
-- **NOTE/VIDEO_ID/SENDER 不進參考池**(voc 設計如此,不是漏):參考池只存不可化約的 5 欄,梗/點子在 `voc pick` 時落地到「待拍.備註」。去重 key 寫入前由連結即時推導(`dedupKey`),不需存欄。
+- **NOTE/VIDEO_ID/SENDER 不進參考池**(voc 設計如此,不是漏):參考池只存不可化約的 5 欄,梗/點子在搬進待拍後填「待拍.備註」。去重 key 寫入前由連結即時推導(`dedupKey`),不需存欄。
 - **去重(寫入前,bot 端負責)**:`src/pipeline/index.ts` 的 `dedupKey` 對齊 voc 舊 `sync._dedup_key` —— 優先「平台:影片id」(用 bot `detectPlatform`+`extractVideoId`,讓 youtu.be/watch?v=/shorts 收斂),抽不到才退連結路徑(砍 query/fragment + 去尾斜線 + lower)。`collect` 寫入前讀現有「連結」欄、候選與既有列同支推 key 比對,重複跳過。**全表比對、無時間窗**(參考池永久池,不 prune)。
   - **範圍限制(已知,刻意)**:只比對**參考池**的「連結」欄,不比對 待拍/完成。被 `pick` 搬走的素材若再次分享,bot 會當新素材再收一筆(舊 `sync.py` 會連 待拍/完成 一起比)。換取 bot 不耦合 voc 全 schema;若日後重複太多,再在 bot 端擴比對範圍。
-- **`/pick` 打勾(bot 不自己搬待拍)**:`/pick R####` 在「參考池」按 `id` 找列、把「**挑**」欄寫 `TRUE`,真正搬移交 `voc pick`(`voc pick --execute` 已在 voc 每日 cron)。
-  - **為什麼不在 bot 搬**:「參考池→待拍」是 voc pick 的不變式重活(T 號跨待拍+完成取 max、ISO 日期、先 append 後 delete);bot 重做=脆弱第二真相。bot 只寫一格,單一真相留 voc。
-  - **耦合點(改任一個要兩 repo 一起)**:欄名 `id`、`挑`(= voc `schema.PICK_COL`);打勾值寫 `TRUE`(voc `_is_checked` 認 `TRUE/✓/V/Y/1/X/是`)。bot 端在 `src/storage/poolPick.ts`。注意 `poolPick.ts`(寫「挑」格)與 `googleSheets.ts`(append 整列)**都碰參考池但各寫各的欄**,符合「同一欄只一邊寫」。
+- **挑片 = 在 Sheet 勾「挑」(bot 不參與)**:人在「參考池」勾「挑」checkbox → voc 的 GAS `pickScan_`(onEdit simple trigger)即時把該列整列搬進待拍、發 T 號、刪參考池本列。bot 沒有挑片指令。
+  - **`/pick` 已退役(2026-06-23)**:原本 `/pick R####` 靠 `id`(R 號)在參考池找列打勾。但 bot 直寫的列 `id` 留空(無 R 號),`/pick` 定位不到;且本來就要打字,單人作業多餘。連 `bot/handlers/pick.ts` + `storage/poolPick.ts` 一起砍。挑片統一走 Sheet 勾「挑」。
+  - **沒有 `voc pick` 指令**:搬移在 GAS(`pickScan_`),不是 Python CLI。別在文件/註解寫「voc pick」(會誤導)。
 - **平台偵測器兩套、各自獨立**:bot `detectPlatform`(hostname)與 voc `parse_url`(regex)是兩份實作。bot 是參考池唯一寫入者 → 平台欄以 bot 判定為準(voc 不再 re-derive)。`contract.test.ts` 釘住 bot 8 個平台碼都落在 voc 認得的小寫碼集合。
 - **改 voc 一律另開 voc session**,別從 bot 滑上游。
 - 驗證腳本:`npx tsx scripts/verify-sheet.ts`(列分頁 + 印參考池表頭)、`scripts/read-refs.ts`(讀參考池)。

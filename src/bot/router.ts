@@ -1,6 +1,8 @@
 /**
  * Telegraf 指令路由 —— 把指令對到 handler,集中錯誤處理。
- * 指令解析框架留好:/stats、/pick、一般訊息。新指令在這裡掛。
+ * 指令解析框架留好:/stats、一般訊息。新指令在這裡掛。
+ * (/pick 已退役 2026-06-23:挑片統一走 Sheet 勾「挑」checkbox → GAS 搬待拍;
+ *  /pick 靠 R 號定位,但 bot 直寫的列 id 留空、定位不到,且本來就要打字,單人作業多餘。)
  */
 import { Telegraf, type Context } from "telegraf";
 import { message } from "telegraf/filters";
@@ -8,8 +10,6 @@ import type { Config } from "../config.js";
 import type { Storage } from "../storage/Storage.js";
 import { runCollect } from "./handlers/collect.js";
 import { runStats } from "./handlers/stats.js";
-import { runPick } from "./handlers/pick.js";
-import { GoogleSheetsPool, type PoolStore } from "../storage/poolPick.js";
 import { logger } from "../utils/logger.js";
 
 /** drain 模式注入的鉤子;常駐版不傳(undefined)。 */
@@ -30,22 +30,13 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
     }
   };
 
-  // 參考池打勾器(/pick 用);memory 乾跑模式沒有真表 → null。
-  const pool: PoolStore | null = config.google
-    ? new GoogleSheetsPool({
-        credentials: config.google.credentials,
-        sheetId: config.google.sheetId,
-        poolSheetName: config.google.poolSheetName,
-      })
-    : null;
-
   // /start /help —— 簡短說明
   bot.start((ctx) =>
-    ctx.reply("貼「短影音連結 + 備註」我就幫你收進參考池。指令:/stats /pick"),
+    ctx.reply("貼「短影音連結 + 備註」我就幫你收進參考池。挑片在 Sheet 勾「挑」。指令:/stats"),
   );
   bot.help((ctx) =>
     ctx.reply(
-      "貼連結收錄;/stats 看統計;/pick R#### 把參考池編碼打勾(交 voc 搬待拍)。",
+      "貼連結收錄;/stats 看統計。挑片:到「參考池」勾「挑」欄,GAS 自動搬進待拍。",
     ),
   );
 
@@ -60,27 +51,11 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
     }
   });
 
-  // /pick R#### [R#### …] —— 在參考池打勾,交 voc pick 搬進待拍
-  bot.command("pick", async (ctx) => {
-    const arg = commandArg(ctx, "pick");
-    if (!pool) {
-      await ctx.reply("memory 乾跑模式不支援 /pick(需接真表)。").catch(() => {});
-      return;
-    }
-    try {
-      await ctx.reply((await runPick(arg, { pool })).reply).catch(() => {});
-    } catch (err) {
-      logger.error("/pick 失敗", err);
-      await ctx.reply("❌ 打勾失敗。").catch(() => {});
-      await notifyError(`/pick 失敗:${errText(err)}`);
-    }
-  });
-
   // 文字 / caption 共用的收集流程。已被上面 command 攔截的不會進來。
   const handleCollectText = async (ctx: Context, text: string) => {
     // 未知指令(以 / 開頭但沒對到)→ 提示,不要當連結處理
     if (text.startsWith("/")) {
-      await ctx.reply("不認得這個指令。可用:/stats /pick,或直接貼連結。").catch(() => {});
+      await ctx.reply("不認得這個指令。可用:/stats,或直接貼連結。").catch(() => {});
       return;
     }
     try {
@@ -93,7 +68,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
         },
       );
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,
-      // 不能因此吞掉 notifyError(寫表結果才是重點)。對齊 /stats、/pick 的護法。
+      // 不能因此吞掉 notifyError(寫表結果才是重點)。對齊 /stats 的護法。
       await ctx.reply(result.reply).catch(() => {});
       if (result.error) await notifyError(result.error);
     } catch (err) {
@@ -117,14 +92,6 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
   });
 
   return bot;
-}
-
-/** 取指令參數:`/pick R1990` → `R1990`。 */
-function commandArg(ctx: Context, command: string): string {
-  const text =
-    ctx.message && "text" in ctx.message ? (ctx.message.text as string) : "";
-  const re = new RegExp(`^/${command}(?:@\\S+)?\\s*`, "i");
-  return text.replace(re, "").trim();
 }
 
 function errText(err: unknown): string {

@@ -24,7 +24,7 @@ describe("runCollect", () => {
     expect(Object.keys(row)).toEqual(["id", "平台", "連結", "挑", "加入日期"]);
     expect(row.平台).toBe("tiktok"); // 小寫碼
     expect(row.連結).toBe("https://www.tiktok.com/@u/video/7234567890");
-    expect(row.id).toBe(""); // 留空,voc pick 統一編號
+    expect(row.id).toBe(""); // 留空,bot 不發號(GAS 搬待拍時發 T 號)
     expect(row.挑).toBe(""); // 留空 = 還沒挑
     expect(row.加入日期).toBe(todayIsoTaipei()); // ISO YYYY-MM-DD
   });

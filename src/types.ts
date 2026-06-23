@@ -45,7 +45,7 @@ export const PLATFORM_CODE: Record<Platform, string> = {
 export interface ParsedMessage {
   /** 原始(未清理)網址,給 cleanUrl 當輸入。 */
   rawUrl: string;
-  /** 訊息文字移除網址後的備註(供回覆顯示;參考池無備註欄,梗在 voc pick 時落「待拍.備註」)。 */
+  /** 訊息文字移除網址後的備註(供回覆顯示;參考池無備註欄,梗在搬進待拍後填「待拍.備註」)。 */
   note: string;
   /** 提交者(Telegram from.first_name);參考池不存,保留供未來多人辨識用。 */
   sender: string;
@@ -78,13 +78,13 @@ export interface VideoIdInfo {
  * 「參考池」一列資料 —— 欄位即 voc `schema.REFS`,鍵名/順序就是 Sheet 表頭,不要改。
  *
  * voc 參考池 5 欄(2026-06-22 契約):
- * - id        :可留空(voc `pick` 搬待拍時會用 R 編碼;bot 寫入留空,讓 voc 統一編號)。
+ * - id        :bot 寫入留空(不發號;挑片時 GAS 搬待拍會發 T 號)。
  * - 平台      :小寫碼(PLATFORM_CODE)。
  * - 連結      :乾淨連結 —— 「打開」+ 去重的唯一 key。
- * - 挑        :checkbox,留空(=還沒挑);voc `pick` 掃打勾的搬待拍。
+ * - 挑        :checkbox,留空(=還沒挑);勾它 → GAS 即時搬待拍。
  * - 加入日期  :ISO YYYY-MM-DD(新鮮度;voc `normalize_date` 也吃 ISO)。
  *
- * NOTE / VIDEO_ID / SENDER 等原始細節參考池不存(voc 設計如此):梗在 pick 時落「待拍.備註」,
+ * NOTE / VIDEO_ID / SENDER 等原始細節參考池不存(voc 設計如此):梗在搬進待拍後填「待拍.備註」,
  * 去重 key 寫入前由連結即時推導(見 pipeline `dedupKey`),不需存欄。
  */
 export interface RefRow {

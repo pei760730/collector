@@ -67,7 +67,7 @@ export interface Config {
     /** 解析後的 service account 憑證物件。 */
     credentials: { client_email: string; private_key: string };
     sheetId: string;
-    /** voc 的「參考池」分頁名(同一張表);收錄寫入 + /pick 打勾都用它。 */
+    /** voc 的「參考池」分頁名(同一張表):收錄寫入的目標分頁。 */
     poolSheetName: string;
   } | null;
   errorChatId: string;
