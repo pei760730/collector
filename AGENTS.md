@@ -60,7 +60,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 ```bash
 npm run typecheck     # tsc(含 tests),不可有型別錯
-npm test              # Vitest 全綠(pipeline 純函式 + collect/pick/router/contract 整合)
+npm test              # Vitest 全綠(pipeline 純函式 + collect/router/contract 整合)
 npm run build         # tsc 出 dist/index.js(Dockerfile CMD 依賴它)
 ```
 
