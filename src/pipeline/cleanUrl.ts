@@ -21,6 +21,9 @@ const TRACKING_PARAMS = new Set([
   "igshid",
   "xmt",
   "slof",
+  // 小紅書(xiaohongshu)分享指紋 / 時效性 token
+  "xsec_token",
+  "xsec_source",
 ]);
 
 /** 行動版 → 桌面版 host 對照。 */

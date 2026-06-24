@@ -53,6 +53,13 @@ describe("cleanUrl", () => {
     );
   });
 
+  it("清掉小紅書分享指紋(xsec_token/xsec_source)", () => {
+    const out = cleanUrl(
+      "https://www.xiaohongshu.com/explore/abc?xsec_token=XYZ&xsec_source=pc_feed",
+    ).cleanUrl;
+    expect(out).toBe("https://www.xiaohongshu.com/explore/abc");
+  });
+
   describe("Facebook 轉址解開(l.facebook.com/l.php?u=…)", () => {
     it("還原內層 IG reel(外層 fbclid 也清掉)", () => {
       const inner = "https://www.instagram.com/reel/CxYz_-1";

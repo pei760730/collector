@@ -22,7 +22,7 @@ export function formatErrorMsg(): string {
     "請貼「短影音連結 + 備註」,例如:",
     "https://www.tiktok.com/@user/video/1234567890 健身梗很好笑",
     "",
-    "支援:TikTok / YouTube / Facebook / Instagram / X / 抖音 / 小紅書",
+    "支援:TikTok / YouTube / Facebook / Instagram / Threads / X / 抖音 / 小紅書",
   ].join("\n");
 }
 

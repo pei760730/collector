@@ -1,6 +1,6 @@
 /**
  * 日期工具 —— 固定 Asia/Taipei 時區。
- * DATE 欄格式 YYYY/M/D(沿用 n8n moment 行為,不補零)。
+ * 參考池「加入日期」欄格式 ISO YYYY-MM-DD(對齊 voc schema 的 ISO 慣例)。
  */
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
@@ -10,12 +10,6 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 export const TZ = "Asia/Taipei";
-
-/** 今天日期字串 YYYY/M/D(台北),epoch ms 可注入以利測試。 */
-export function todayTaipei(nowMs: number = Date.now()): string {
-  const d = dayjs(nowMs).tz(TZ);
-  return `${d.year()}/${d.month() + 1}/${d.date()}`;
-}
 
 /**
  * 今天 ISO 日期字串 YYYY-MM-DD(台北),epoch ms 可注入以利測試。
