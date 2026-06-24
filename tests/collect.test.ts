@@ -98,15 +98,30 @@ describe("runCollect", () => {
     expect(row.連結).not.toContain("fbclid");
   });
 
-  it("不支援平台(FB)→ 平台 facebook、仍寫入(連結 key 去重)", async () => {
+  it("Facebook fb.watch → 平台 facebook、抽得到 id(不再標不支援)", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect(
       { text: "https://fb.watch/abc note", senderName: "Pei" },
       deps(storage),
     );
     expect(r.reply).toContain("已收進參考池");
+    expect(r.reply).not.toContain("抓不到 video ID");
     const row = (await storage.readAll())[0]!;
     expect(row.平台).toBe("facebook");
+  });
+
+  it("Facebook 同支影片 watch?v= 與 /videos/ 收斂同 key → 去重", async () => {
+    const storage = new MemoryStorage();
+    await runCollect(
+      { text: "https://www.facebook.com/watch?v=778899 第一次", senderName: "Pei" },
+      deps(storage),
+    );
+    const r2 = await runCollect(
+      { text: "https://www.facebook.com/u/videos/778899 又貼一次", senderName: "Pei" },
+      deps(storage),
+    );
+    expect(r2.reply).toContain("已經收過了");
+    expect((await storage.readAll()).length).toBe(1);
   });
 
   it("未知網域 fallback → 平台 unknown(不誤猜 instagram)", async () => {

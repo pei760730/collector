@@ -42,6 +42,32 @@ const YOUTUBE_PATTERNS = [
 const XHS_PATTERNS = [/\/explore\/([a-zA-Z0-9]+)/, /\/discovery\/item\/([a-zA-Z0-9]+)/];
 const THREADS_PATTERNS = [/\/post\/([a-zA-Z0-9_-]+)/];
 
+/**
+ * Facebook 抽 ID(port 自 OF-DOG;比 n8n 版「Facebook 一律 unknown」強)。
+ * 四種形態依序試,各帶不同前綴讓 dedup key 不互撞(前綴只進去重 key,不寫 Sheet):
+ *   A. fb.watch/<code>            → fbw_
+ *   B. /(reel|reels|videos)/<n>   → fb_
+ *   C. /share/[rvp]/<code>        → fbs_
+ *   D. query story_fbid 或 v      → fb_
+ * 四種都不中(如純個人頁 / 社團)→ 回 null,退 unknown_ + 連結路徑去重(行為同舊版)。
+ */
+function extractFacebook(url: string): string | null {
+  const fbw = url.match(/fb\.watch\/([A-Za-z0-9_-]+)/);
+  if (fbw) return `fbw_${fbw[1]}`;
+  const vids = url.match(/\/(?:reel|reels|videos)\/(\d+)/);
+  if (vids) return `fb_${vids[1]}`;
+  const share = url.match(/\/share\/[rvp]\/([A-Za-z0-9_-]+)/);
+  if (share) return `fbs_${share[1]}`;
+  try {
+    const u = new URL(url);
+    const story = u.searchParams.get("story_fbid") ?? u.searchParams.get("v");
+    if (story) return `fb_${story}`;
+  } catch {
+    /* 非合法 URL → 跳過 query 形態 */
+  }
+  return null;
+}
+
 export function extractVideoId(
   platform: Platform,
   cleanUrl: string,
@@ -72,7 +98,14 @@ export function extractVideoId(
       prefix = "threads";
       raw = firstMatch(url, THREADS_PATTERNS);
       break;
-    // Facebook / X / 抖音:n8n 版沒有抽 ID 規則 → 視為不支援
+    case "Facebook": {
+      // FB id 已自帶前綴(fbw_/fb_/fbs_)→ 直接回,不再套 `${prefix}_`。
+      const fbId = extractFacebook(url);
+      if (fbId) return { videoId: fbId, unsupported: false };
+      raw = null; // 四形態皆不中 → 退 unknown_
+      break;
+    }
+    // X / 抖音:n8n 版沒有抽 ID 規則 → 視為不支援
     default:
       raw = null;
   }

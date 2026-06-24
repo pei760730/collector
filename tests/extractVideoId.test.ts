@@ -81,8 +81,41 @@ describe("extractVideoId", () => {
     ).toBe("xhs_def456");
   });
 
-  it("Facebook 無抽取規則 → unknown + unsupported", () => {
+  it("Facebook fb.watch/<code> → fbw_", () => {
     const r = extractVideoId("Facebook", "https://fb.watch/xyz", FIXED);
+    expect(r.unsupported).toBe(false);
+    expect(r.videoId).toBe("fbw_xyz");
+  });
+
+  it("Facebook /reel|/reels|/videos/<n> → fb_", () => {
+    expect(
+      extractVideoId("Facebook", "https://www.facebook.com/reel/1234567890").videoId,
+    ).toBe("fb_1234567890");
+    expect(
+      extractVideoId("Facebook", "https://www.facebook.com/u/videos/987654321").videoId,
+    ).toBe("fb_987654321");
+  });
+
+  it("Facebook /share/[rvp]/<code> → fbs_", () => {
+    expect(
+      extractVideoId("Facebook", "https://www.facebook.com/share/r/AbC-1_x").videoId,
+    ).toBe("fbs_AbC-1_x");
+    expect(
+      extractVideoId("Facebook", "https://www.facebook.com/share/v/9z8Y").videoId,
+    ).toBe("fbs_9z8Y");
+  });
+
+  it("Facebook watch?v= / story_fbid → fb_", () => {
+    expect(
+      extractVideoId("Facebook", "https://www.facebook.com/watch?v=1122334455").videoId,
+    ).toBe("fb_1122334455");
+    expect(
+      extractVideoId("Facebook", "https://www.facebook.com/story.php?story_fbid=55667788").videoId,
+    ).toBe("fb_55667788");
+  });
+
+  it("Facebook 純個人頁(四形態皆不中)→ unknown + unsupported", () => {
+    const r = extractVideoId("Facebook", "https://www.facebook.com/someuser", FIXED);
     expect(r.unsupported).toBe(true);
     expect(r.videoId).toBe("unknown_1700000000000");
   });
