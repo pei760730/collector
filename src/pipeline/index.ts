@@ -65,7 +65,6 @@ export function assembleDraft(parsed: ParsedMessage, now: () => number = Date.no
       : { videoId: "", unsupported: true };
 
   const row: RefRow = {
-    id: "", // 留空:bot 不發號(挑片走 Sheet 勾「挑」→ GAS 搬待拍時發 T 號)
     平台: PLATFORM_CODE[platform.platform],
     連結: cleaned.cleanUrl,
     挑: "", // 留空 = 還沒挑

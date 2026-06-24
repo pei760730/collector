@@ -16,7 +16,8 @@ import { POOL_COLUMNS, PLATFORM_CODE, type Platform } from "../src/types.js";
 import { detectPlatform } from "../src/pipeline/detectPlatform.js";
 
 // voc schema.REFS.columns(參考池表頭,順序也要對上 —— bot append 用固定欄序硬塞)。
-const VOC_REFS_COLUMNS = ["id", "平台", "連結", "挑", "加入日期"] as const;
+// 2026-06-24:砍掉 id(4 欄)。
+const VOC_REFS_COLUMNS = ["平台", "連結", "挑", "加入日期"] as const;
 
 // voc 全系統認得的小寫平台碼(normalize.parse_url 產出的平台 + 參考池慣例)。
 const VOC_PLATFORM_CODES = new Set([
@@ -31,7 +32,7 @@ const VOC_PLATFORM_CODES = new Set([
 ]);
 
 describe("voc 契約:參考池欄名/順序", () => {
-  it("bot 寫的參考池 5 欄必須與 voc schema.REFS 完全對上(含順序)", () => {
+  it("bot 寫的參考池 4 欄必須與 voc schema.REFS 完全對上(含順序)", () => {
     expect(POOL_COLUMNS).toEqual([...VOC_REFS_COLUMNS]);
   });
 });

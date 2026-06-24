@@ -21,10 +21,9 @@ describe("runCollect", () => {
     const all = await storage.readAll();
     expect(all).toHaveLength(1);
     const row = all[0]!;
-    expect(Object.keys(row)).toEqual(["id", "平台", "連結", "挑", "加入日期"]);
+    expect(Object.keys(row)).toEqual(["平台", "連結", "挑", "加入日期"]);
     expect(row.平台).toBe("tiktok"); // 小寫碼
     expect(row.連結).toBe("https://www.tiktok.com/@u/video/7234567890");
-    expect(row.id).toBe(""); // 留空,bot 不發號(GAS 搬待拍時發 T 號)
     expect(row.挑).toBe(""); // 留空 = 還沒挑
     expect(row.加入日期).toBe(todayIsoTaipei()); // ISO YYYY-MM-DD
   });
@@ -63,7 +62,6 @@ describe("runCollect", () => {
 
   it("既有列已在參考池 → 同連結視為重複,不重寫", async () => {
     const seed: RefRow = {
-      id: "R0007",
       平台: "youtube",
       連結: "https://youtu.be/dQw4w9WgXcQ",
       挑: "",

@@ -4,8 +4,8 @@
  *
  * 2026-06-22:bot 改成「直接寫 voc 的『參考池』分頁」(廢「暫存區」中間層)。
  * voc 端已砍掉 sync-pool(暫存區→參考池 每日複製),bot 與 voc 用同一張表、同一個 SA,
- * 所以 bot 直寫參考池就是最終狀態,不再有複製儀式。參考池 5 欄欄名/順序必須與
- * voc `schema.REFS` 完全對上(契約由 tests/contract.test.ts 守)。
+ * 所以 bot 直寫參考池就是最終狀態,不再有複製儀式。參考池 4 欄欄名/順序必須與
+ * voc `schema.REFS` 完全對上(契約由 tests/contract.test.ts 守;2026-06-24 砍 id)。
  */
 
 /** 支援的平台代碼(內部判定用的顯示名;寫進 Sheet 的是 PLATFORM_CODE 的小寫碼)。 */
@@ -77,18 +77,17 @@ export interface VideoIdInfo {
 /**
  * 「參考池」一列資料 —— 欄位即 voc `schema.REFS`,鍵名/順序就是 Sheet 表頭,不要改。
  *
- * voc 參考池 5 欄(2026-06-22 契約):
- * - id        :bot 寫入留空(不發號;挑片時 GAS 搬待拍會發 T 號)。
+ * voc 參考池 4 欄(2026-06-24 契約;砍掉 id):
  * - 平台      :小寫碼(PLATFORM_CODE)。
- * - 連結      :乾淨連結 —— 「打開」+ 去重的唯一 key。
+ * - 連結      :乾淨連結 —— 「打開」+ 去重的唯一 key(= 參考池的身份)。
  * - 挑        :checkbox,留空(=還沒挑);勾它 → GAS 即時搬待拍。
  * - 加入日期  :ISO YYYY-MM-DD(新鮮度;voc `normalize_date` 也吃 ISO)。
  *
+ * id 欄已砍(2026-06-24):池內 id 是純流水號、非去重 key(連結才是)、挑走搬待拍另發 T 號不沿用 → 廢標籤。
  * NOTE / VIDEO_ID / SENDER 等原始細節參考池不存(voc 設計如此):梗在搬進待拍後填「待拍.備註」,
  * 去重 key 寫入前由連結即時推導(見 pipeline `dedupKey`),不需存欄。
  */
 export interface RefRow {
-  id: string;
   平台: string;
   連結: string;
   挑: string;
@@ -96,4 +95,4 @@ export interface RefRow {
 }
 
 /** 「參考池」表頭順序(SSOT),與 voc schema.REFS.columns 對齊。 */
-export const POOL_COLUMNS: (keyof RefRow)[] = ["id", "平台", "連結", "挑", "加入日期"];
+export const POOL_COLUMNS: (keyof RefRow)[] = ["平台", "連結", "挑", "加入日期"];
