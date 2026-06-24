@@ -54,6 +54,23 @@ function enumEnv<T extends string>(name: string, allowed: readonly T[], fallback
   return v as T;
 }
 
+/**
+ * 逗號分隔的 chat/user id 白名單(來源授權)。非整數項直接丟錯(fail-fast,
+ * 別讓打錯的 id 默默失效後還「以為有保護」)。空字串 → 空陣列(是否強制由 loadConfig 決定)。
+ */
+function chatIdsEnv(name: string): number[] {
+  const v = (process.env[name] ?? "").trim();
+  if (v === "") return [];
+  return v.split(",").map((s) => {
+    const t = s.trim();
+    const n = Number(t);
+    if (!Number.isInteger(n)) {
+      throw new Error(`環境變數 ${name} 內含非整數 chat id:'${t}'(請用逗號分隔的純數字 id)`);
+    }
+    return n;
+  });
+}
+
 export type BotMode = "polling" | "webhook";
 export type StorageMode = "sheets" | "memory";
 
@@ -71,6 +88,8 @@ export interface Config {
     poolSheetName: string;
   } | null;
   errorChatId: string;
+  /** 來源白名單:只處理這些 chat/user id 的訊息(公開後防陌生人灌池)。空=不限制,僅限乾跑/開發。 */
+  allowedChatIds: number[];
   expandShortUrls: boolean;
   logLevel: string;
 }
@@ -139,11 +158,19 @@ export function loadConfig(): Config {
     },
     google,
     errorChatId: optional("ERROR_CHAT_ID", ""),
+    allowedChatIds: chatIdsEnv("ALLOWED_CHAT_IDS"),
     expandShortUrls: boolEnv("EXPAND_SHORT_URLS", false),
     logLevel: optional("LOG_LEVEL", "info"),
   };
   if (mode === "webhook" && !cached.webhook.domain) {
     throw new Error("BOT_MODE=webhook 但未設 WEBHOOK_DOMAIN");
+  }
+  // 公開 repo 防灌池:sheets 模式(=正式寫真表)必須設來源白名單,否則任何人都能餵 bot 寫進你的表。
+  // 寧可 fail-fast 紅燈被發現,也不要默默大開。memory 乾跑不寫真表,免設。
+  if (storage === "sheets" && cached.allowedChatIds.length === 0) {
+    throw new Error(
+      "STORAGE=sheets 但未設 ALLOWED_CHAT_IDS:正式寫表必須限定來源 chat id(逗號分隔純數字),否則公開後任何人都能灌你的參考池",
+    );
   }
   return cached;
 }
