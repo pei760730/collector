@@ -38,3 +38,17 @@ jobs:
           # 寫表失敗時的 Telegram 告警對象(chat id 非機密,已公開於 .env.example)。
           # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
           ERROR_CHAT_ID: "-48214680"
+
+      # drain 層崩潰(如 ensureHeader 對 live 表頭斷言失敗 = 跨 repo 契約漂移)會 process.exit(1),
+      # 但那發生在逐筆 notifyError 之前 → 不會走 in-app 告警。這一步補:job 失敗就 Telegram 喊一聲,
+      # 否則只剩 GitHub 紅燈(owner chat-only 看不到)。契約漂移 ≤1h(cron)內就被這條叫出來。
+      - name: Notify Telegram on failure
+        if: failure()
+        continue-on-error: true
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: "-48214680"
+        run: |
+          if [ -z "$TG_TOKEN" ]; then echo "no TELEGRAM_BOT_TOKEN → skip"; exit 0; fi
+          MSG="🔴 short-video-bot collect 失敗(可能參考池表頭漂移/ensureHeader 拒寫)。${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -sS --max-time 20 "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" --data-urlencode "chat_id=${TG_CHAT}" --data-urlencode "text=${MSG}" >/dev/null && echo "telegram notified" || echo "telegram notify failed (ignored)"
