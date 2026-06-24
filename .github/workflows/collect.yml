@@ -1,0 +1,56 @@
+name: collect
+
+# 定時把 Telegram 這段時間囤的訊息撈乾、解析、寫進「參考池」,然後結束。
+# 取代常駐機器:repo 是 public → Actions 免費額度無上限,$0。
+# Telegram 保留未領更新約 24h,只要間隔 < 24h 就不漏訊息。
+on:
+  schedule:
+    - cron: "*/15 * * * *" # 每 15 分(UTC);收訊息延遲約 15–25 分(GitHub 排程會拖,非秒到)。public Actions 免費無上限,密一點不花錢
+  workflow_dispatch: {} # 手動補跑(要立刻收就按這個)
+
+# 同時只跑一個,避免兩個 job 並行領 getUpdates 互搶(會漏 ack)。
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # 保險:任何意外卡死 10 分鐘殺掉,別吃滿 6h 額度、堵住後續 cron
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: drain
+        run: npm run drain
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          STORAGE: sheets
+          # 來源白名單:只收這些 chat/user id 的訊息(公開後防陌生人灌池)。
+          # 必設 —— 沒設 sheets 模式會 fail-fast 直接紅燈(寧可不跑,也不要大開)。
+          ALLOWED_CHAT_IDS: ${{ secrets.ALLOWED_CHAT_IDS }}
+          # cron 無人等候,展開 TikTok 等短連結→正規連結,讓短/長連結去重一致。
+          # 展開失敗會優雅退回原值(不會更糟)。
+          EXPAND_SHORT_URLS: "true"
+          # 寫表失敗時的 Telegram 告警對象(從 secret 注入,別硬編任何人的 chat id)。
+          # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
+          ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}
+
+      # drain 整層崩潰(如表頭漂移 ensureHeader 拒寫)會在逐筆 notifyError 之前 process.exit(1) →
+      # 走不到 in-app 告警。這一步補:job 失敗就 Telegram 喊一聲,否則 chat-only owner 只剩看不到的紅燈。
+      - name: Notify Telegram on failure
+        if: failure()
+        continue-on-error: true
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.ERROR_CHAT_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then echo "no TELEGRAM_BOT_TOKEN / ERROR_CHAT_ID → skip"; exit 0; fi
+          MSG="🔴 short-video-bot collect 失敗(可能表頭漂移/ALLOWED_CHAT_IDS 未設)。${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -sS --max-time 20 "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" --data-urlencode "chat_id=${TG_CHAT}" --data-urlencode "text=${MSG}" >/dev/null && echo "telegram notified" || echo "telegram notify failed (ignored)"

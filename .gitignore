@@ -1,0 +1,23 @@
+# secrets — 永遠不進版控
+.env
+.env.*
+!.env.example
+service_account.json
+*.pem
+*.key
+
+# build / deps
+node_modules/
+dist/
+*.tsbuildinfo
+
+# logs / os
+*.log
+.DS_Store
+Thumbs.db
+
+# test / coverage
+coverage/
+.vitest/
+
+.review/
