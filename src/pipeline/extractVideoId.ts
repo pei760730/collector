@@ -43,7 +43,7 @@ const XHS_PATTERNS = [/\/explore\/([a-zA-Z0-9]+)/, /\/discovery\/item\/([a-zA-Z0
 const THREADS_PATTERNS = [/\/post\/([a-zA-Z0-9_-]+)/];
 
 /**
- * Facebook 抽 ID(port 自 OF-DOG;比 n8n 版「Facebook 一律 unknown」強)。
+ * Facebook 抽 ID(port 自 feed-collector;比 n8n 版「Facebook 一律 unknown」強)。
  * 四種形態依序試,各帶不同前綴讓 dedup key 不互撞(前綴只進去重 key,不寫 Sheet):
  *   A. fb.watch/<code>            → fbw_
  *   B. /(reel|reels|videos)/<n>   → fb_

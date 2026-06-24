@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { POOL_COLUMNS } from "../src/types.js";
 
-const SHEET_ID = process.env.GOOGLE_SHEET_ID ?? "1V_CaTb4YgtsFP7HLrLK3QHrKCMr2gPCnU0Xe7y7Dse0";
+const SHEET_ID = process.env.GOOGLE_SHEET_ID ?? "<SHEET_ID>";
 const POOL = "參考池";
 const expected = POOL_COLUMNS as string[];
 

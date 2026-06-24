@@ -59,10 +59,10 @@
 
 ## 第六層:與 voc 對接契約(改欄位前先讀!跨 repo)
 
-bot 是上游:**直接寫** Google 表「**短影音進度N**」(`1V_CaTb…`,= voc 的 `VOC_SPREADSHEET_ID`)的「**參考池**」分頁。
+bot 是上游:**直接寫** Google 表「**短影音進度N**」(`<SHEET_ID>`,= voc 的 `VOC_SPREADSHEET_ID`)的「**參考池**」分頁。
 2026-06-22 起廢「暫存區」中間層 —— voc 已砍 `sync.py` / `sync-pool`(暫存區→參考池 每日複製是純儀式,第一性原理刪除)。bot 與 voc 同一張表、同一把 SA,bot 直寫參考池就是最終狀態。
 
-- **同一張表**:bot `GOOGLE_SHEET_ID` 必須 = voc `VOC_SPREADSHEET_ID`(`1V_CaTb…`)。憑證共用 voc 的 `service_account.json`(`voc-sheets@voc-499914`)。
+- **同一張表**:bot `GOOGLE_SHEET_ID` 必須 = voc `VOC_SPREADSHEET_ID`(`<SHEET_ID>`)。憑證共用 voc 的 `service_account.json`(`<SERVICE_ACCOUNT>`)。
 - **參考池由 voc 擁有,bot 不自建/不改表頭**:voc `init-sheet` 建「參考池」。bot `GoogleSheetsStorage.ensureHeader` 只**驗表頭對齊**,缺分頁 / 表頭不齊一律 fail-fast(不替 voc 動表結構,避免錯欄寫入靜默毀 voc 的池)。
 - **契約欄位 = voc `schema.REFS` 4 欄(改名要兩 repo 一起)**。bot append 用固定欄序硬塞,**欄名 + 順序**都要對上;由 `tests/contract.test.ts` 守(改欄名 → CI 紅):
   - (`id` 已於 2026-06-24 砍除:純流水號、非去重 key,挑走搬待拍另發 T 號不沿用 → 廢標籤。)

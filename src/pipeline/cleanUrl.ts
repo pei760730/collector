@@ -53,7 +53,7 @@ const SHORT_URL_HOSTS = new Set([
 /**
  * Facebook 轉址解開:`l.facebook.com/l.php?u=<編碼真網址>` → 還原內層真網址。
  * 非 FB 轉址回 null。`searchParams.get` 已 percent-decode,直接用(不再 decodeURIComponent
- * 雙重解碼)。概念借自 OF-DOG —— 從 FB app 分享 IG/TikTok/YT 等「本來就支援」的連結
+ * 雙重解碼)。概念借自 feed-collector —— 從 FB app 分享 IG/TikTok/YT 等「本來就支援」的連結
  * 常被包成這種轉址,不解會落 fallback + unknown_ 垃圾列。
  */
 function unwrapFacebookRedirect(url: URL): string | null {

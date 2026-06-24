@@ -13,7 +13,7 @@ const auth = new google.auth.JWT({
 });
 const sheets = google.sheets({ version: "v4", auth });
 const res = await sheets.spreadsheets.values.get({
-  spreadsheetId: "1V_CaTb4YgtsFP7HLrLK3QHrKCMr2gPCnU0Xe7y7Dse0",
+  spreadsheetId: "<SHEET_ID>",
   range: "'參考池'!A1:J",
 });
 const rows = res.data.values ?? [];
