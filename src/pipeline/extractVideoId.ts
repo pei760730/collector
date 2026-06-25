@@ -40,6 +40,11 @@ const YOUTUBE_PATTERNS = [
 // 小紅書筆記兩種正規路徑:/explore/<id> 與 /discovery/item/<id>(分享連結常見後者)。
 const XHS_PATTERNS = [/\/explore\/([a-zA-Z0-9]+)/, /\/discovery\/item\/([a-zA-Z0-9]+)/];
 const THREADS_PATTERNS = [/\/post\/([a-zA-Z0-9_-]+)/];
+// X(Twitter)推文 id(port 自 yt-dlp TwitterIE):/status/<數字>。涵蓋 /user/status/、i/web/status/。
+const X_PATTERNS = [/\/status\/(\d+)/];
+// 抖音(Douyin = TikTok 中國版,同 19 位數字 id 制;port 自 yt-dlp DouyinIE):
+// /video/<id> 優先;退 19 位純數字路徑(同 TikTok,擋 query/截斷偽造)。短連結 v.douyin.com 需展開,非此處負責。
+const DOUYIN_PATTERNS = [/\/video\/(\d+)/, /\/(\d{19})(?!\d)/];
 
 /**
  * Facebook 抽 ID(port 自 feed-collector;比 n8n 版「Facebook 一律 unknown」強)。
@@ -100,7 +105,15 @@ export function extractVideoId(platform: Platform, cleanUrl: string): VideoIdInf
       raw = null; // 四形態皆不中 → 退 unknown_
       break;
     }
-    // X / 抖音:n8n 版沒有抽 ID 規則 → 視為不支援
+    case "X":
+      prefix = "x";
+      raw = firstMatch(url, X_PATTERNS);
+      break;
+    case "抖音":
+      prefix = "douyin";
+      raw = firstMatch(url, DOUYIN_PATTERNS);
+      break;
+    // 其餘(Unknown 等):無抽取規則 → 視為不支援,去重退連結路徑 key
     default:
       raw = null;
   }
