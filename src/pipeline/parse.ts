@@ -42,8 +42,6 @@ export class NoUrlError extends Error {
 
 export interface ParseInput {
   text: string;
-  /** Telegram from.first_name;沒有就傳空字串。 */
-  senderName?: string;
 }
 
 /**
@@ -67,10 +65,5 @@ export function parseMessage(input: ParseInput): ParsedMessage {
   const after = text.slice((match.index ?? 0) + token.length);
   const urlTail = token.slice(rawUrl.length); // tidyUrl 砍掉的尾段(備註開頭 / 包裹標點)
   const note = cleanNote(`${before}${urlTail}${after}`);
-  // 改進#5:SENDER 不再寫死 'Pei',用真實提交者,沒有才 unknown
-  const sender =
-    input.senderName && input.senderName.trim() !== ""
-      ? input.senderName.trim()
-      : "unknown";
-  return { rawUrl, note, sender };
+  return { rawUrl, note };
 }

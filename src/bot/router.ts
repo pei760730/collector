@@ -78,7 +78,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
     }
     try {
       const result = await runCollect(
-        { text, senderName: ctx.from?.first_name },
+        { text },
         {
           storage,
           expandShortUrls: config.expandShortUrls,

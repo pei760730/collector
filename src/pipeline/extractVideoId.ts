@@ -1,7 +1,6 @@
 /**
  * Extract Video ID — 從乾淨網址抽出帶平台前綴的唯一 ID。
- * 抓不到 → unknown_<timestamp> 且標 unsupported。
- * `now` 可注入以利測試(預設 Date.now())。
+ * 抓不到 → videoId 留空且標 unsupported(unsupported 時 dedupKey 不讀 videoId,退連結路徑 key)。
  */
 import type { Platform, VideoIdInfo } from "../types.js";
 
@@ -68,11 +67,7 @@ function extractFacebook(url: string): string | null {
   return null;
 }
 
-export function extractVideoId(
-  platform: Platform,
-  cleanUrl: string,
-  now: () => number = Date.now,
-): VideoIdInfo {
+export function extractVideoId(platform: Platform, cleanUrl: string): VideoIdInfo {
   const url = cleanUrl ?? "";
   let raw: string | null = null;
   let prefix = "";
@@ -111,7 +106,7 @@ export function extractVideoId(
   }
 
   if (!raw) {
-    return { videoId: `unknown_${now()}`, unsupported: true };
+    return { videoId: "", unsupported: true };
   }
   return { videoId: `${prefix}_${raw}`, unsupported: false };
 }

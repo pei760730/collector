@@ -21,7 +21,6 @@ export type Platform =
   /** 認不得的網域(fallback / 解析失敗)。不再誤猜 Instagram。 */
   | "Unknown";
 
-export type Confidence = "high" | "medium" | "low";
 export type DetectionMethod = "domain_match" | "fallback" | "error";
 
 /**
@@ -47,8 +46,6 @@ export interface ParsedMessage {
   rawUrl: string;
   /** 訊息文字移除網址後的備註(供回覆顯示;參考池無備註欄,梗在搬進待拍後填「待拍.備註」)。 */
   note: string;
-  /** 提交者(Telegram from.first_name);參考池不存,保留供未來多人辨識用。 */
-  sender: string;
 }
 
 /** Clean URL 階段輸出。 */
@@ -61,14 +58,12 @@ export interface CleanedUrl {
 /** Detect Platform 階段輸出。 */
 export interface PlatformInfo {
   platform: Platform;
-  icon: string;
-  confidence: Confidence;
   method: DetectionMethod;
 }
 
 /** Extract Video ID 階段輸出。 */
 export interface VideoIdInfo {
-  /** 帶平台前綴的唯一 ID,如 tiktok_7234...;抓不到為 unknown_<ts>。 */
+  /** 帶平台前綴的唯一 ID,如 tiktok_7234...;抓不到(unsupported)留空(dedupKey 退連結路徑)。 */
   videoId: string;
   /** 抓不到 ID(平台不支援或格式異常)。 */
   unsupported: boolean;

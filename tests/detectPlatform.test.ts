@@ -23,23 +23,19 @@ describe("detectPlatform", () => {
     it(`${platform} ← ${url}`, () => {
       const r = detectPlatform(url);
       expect(r.platform).toBe(platform);
-      expect(r.confidence).toBe("high");
       expect(r.method).toBe("domain_match");
-      expect(r.icon).not.toBe("");
     });
   }
 
   it("不認得 → fallback Unknown(low,不誤猜 Instagram)", () => {
     const r = detectPlatform("https://example.com/whatever");
     expect(r.platform).toBe("Unknown");
-    expect(r.confidence).toBe("low");
     expect(r.method).toBe("fallback");
   });
 
-  it("空字串 → error/low", () => {
+  it("空字串 → error", () => {
     const r = detectPlatform("");
     expect(r.method).toBe("error");
-    expect(r.confidence).toBe("low");
   });
 
   // hostname 比對:子字串誤判不該再發生

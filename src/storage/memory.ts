@@ -3,7 +3,6 @@
  */
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
 import type { RefRow } from "../types.js";
-import { POOL_COLUMNS } from "../types.js";
 import { computeStats } from "./computeStats.js";
 
 export class MemoryStorage implements Storage {
@@ -14,8 +13,7 @@ export class MemoryStorage implements Storage {
   }
 
   async ensureHeader(): Promise<void> {
-    // 記憶體版用固定 schema,無需建表頭。引用 POOL_COLUMNS 確保 schema 對齊。
-    void POOL_COLUMNS;
+    // 記憶體版用固定 schema,無需建表頭。
   }
 
   async append(row: RefRow): Promise<void> {

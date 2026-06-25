@@ -52,9 +52,21 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       lastErr = err;
-      const e = err as { code?: number; response?: { status?: number } };
-      const code = e?.code ?? e?.response?.status;
-      const retryable = code === 429 || (typeof code === "number" && code >= 500 && code < 600);
+      const e = err as { code?: number | string; response?: { status?: number }; message?: string };
+      const status = typeof e?.code === "number" ? e.code : e?.response?.status;
+      const httpRetryable =
+        status === 429 || (typeof status === "number" && status >= 500 && status < 600);
+      // 暫時性網路錯誤(無 HTTP status):googleapis 取 token 大封包被 WSL2/雲端 MTU 丟造成
+      // "Premature close",或 socket 重置(ECONNRESET/ETIMEDOUT/EPIPE/ECONNREFUSED)。
+      // 這些 ~20% cron 失敗的元兇沒有 code/status,先前不重試直接整輪崩。一律歸為可重試。
+      const codeStr = typeof e?.code === "string" ? e.code : "";
+      const msg = typeof e?.message === "string" ? e.message : "";
+      const networkRetryable =
+        /Premature close/i.test(msg) ||
+        /ECONNRESET|ETIMEDOUT|EPIPE|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(
+          `${codeStr} ${msg}`,
+        );
+      const retryable = httpRetryable || networkRetryable;
       if (!retryable || attempt === tries) throw err;
       if (opts.alreadyDone) {
         try {
@@ -67,7 +79,9 @@ async function withRetry<T>(
         }
       }
       const backoff = 500 * 2 ** (attempt - 1); // 0.5s,1s,2s
-      logger.warn(`${label} 第 ${attempt}/${tries} 次失敗(code=${code}),${backoff}ms 後重試`);
+      logger.warn(
+        `${label} 第 ${attempt}/${tries} 次失敗(code=${status ?? codeStr ?? "?"}),${backoff}ms 後重試`,
+      );
       await new Promise((r) => setTimeout(r, backoff));
     }
   }

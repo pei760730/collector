@@ -12,7 +12,7 @@ describe("runCollect", () => {
   it("合法連結 → 寫入參考池(5 欄、平台小寫)+ 成功訊息", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect(
-      { text: "https://www.tiktok.com/@u/video/7234567890 好笑", senderName: "Pei" },
+      { text: "https://www.tiktok.com/@u/video/7234567890 好笑" },
       deps(storage),
     );
     expect(r.error).toBeUndefined();
@@ -30,7 +30,7 @@ describe("runCollect", () => {
 
   it("同連結重複 → 不寫第二筆", async () => {
     const storage = new MemoryStorage();
-    const msg = { text: "https://youtu.be/dQw4w9WgXcQ 影片", senderName: "Pei" };
+    const msg = { text: "https://youtu.be/dQw4w9WgXcQ 影片" };
     await runCollect(msg, deps(storage));
     const r2 = await runCollect(msg, deps(storage));
     expect(r2.reply).toContain("已經收過");
@@ -39,13 +39,13 @@ describe("runCollect", () => {
 
   it("同支 YouTube 影片不同形態(youtu.be / watch?v= / shorts)→ 收斂成一筆", async () => {
     const storage = new MemoryStorage();
-    await runCollect({ text: "https://youtu.be/dQw4w9WgXcQ a", senderName: "Pei" }, deps(storage));
+    await runCollect({ text: "https://youtu.be/dQw4w9WgXcQ a" }, deps(storage));
     const r2 = await runCollect(
-      { text: "https://www.youtube.com/watch?v=dQw4w9WgXcQ b", senderName: "Pei" },
+      { text: "https://www.youtube.com/watch?v=dQw4w9WgXcQ b" },
       deps(storage),
     );
     const r3 = await runCollect(
-      { text: "https://www.youtube.com/shorts/dQw4w9WgXcQ c", senderName: "Pei" },
+      { text: "https://www.youtube.com/shorts/dQw4w9WgXcQ c" },
       deps(storage),
     );
     expect(r2.reply).toContain("已經收過");
@@ -55,8 +55,8 @@ describe("runCollect", () => {
 
   it("不同影片 → 各自收一筆", async () => {
     const storage = new MemoryStorage();
-    await runCollect({ text: "https://youtu.be/aaaaaaaaaaa x", senderName: "Pei" }, deps(storage));
-    await runCollect({ text: "https://youtu.be/bbbbbbbbbbb y", senderName: "Pei" }, deps(storage));
+    await runCollect({ text: "https://youtu.be/aaaaaaaaaaa x" }, deps(storage));
+    await runCollect({ text: "https://youtu.be/bbbbbbbbbbb y" }, deps(storage));
     expect(await storage.readAll()).toHaveLength(2);
   });
 
@@ -69,7 +69,7 @@ describe("runCollect", () => {
     };
     const storage = new MemoryStorage([seed]);
     const r = await runCollect(
-      { text: "https://youtu.be/dQw4w9WgXcQ 又貼一次", senderName: "Pei" },
+      { text: "https://youtu.be/dQw4w9WgXcQ 又貼一次" },
       deps(storage),
     );
     expect(r.reply).toContain("已經收過");
@@ -78,7 +78,7 @@ describe("runCollect", () => {
 
   it("無網址 → 格式錯誤提示", async () => {
     const storage = new MemoryStorage();
-    const r = await runCollect({ text: "亂打一通", senderName: "Pei" }, deps(storage));
+    const r = await runCollect({ text: "亂打一通" }, deps(storage));
     expect(r.reply).toContain("看不懂");
     expect(await storage.readAll()).toHaveLength(0);
   });
@@ -88,7 +88,6 @@ describe("runCollect", () => {
     await runCollect(
       {
         text: "https://m.tiktok.com/@u/video/7234567890?utm_source=ig&fbclid=x note",
-        senderName: "Pei",
       },
       deps(storage),
     );
@@ -101,7 +100,7 @@ describe("runCollect", () => {
   it("Facebook fb.watch → 平台 facebook、抽得到 id(不再標不支援)", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect(
-      { text: "https://fb.watch/abc note", senderName: "Pei" },
+      { text: "https://fb.watch/abc note" },
       deps(storage),
     );
     expect(r.reply).toContain("已收進參考池");
@@ -113,11 +112,11 @@ describe("runCollect", () => {
   it("Facebook 同支影片 watch?v= 與 /videos/ 收斂同 key → 去重", async () => {
     const storage = new MemoryStorage();
     await runCollect(
-      { text: "https://www.facebook.com/watch?v=778899 第一次", senderName: "Pei" },
+      { text: "https://www.facebook.com/watch?v=778899 第一次" },
       deps(storage),
     );
     const r2 = await runCollect(
-      { text: "https://www.facebook.com/u/videos/778899 又貼一次", senderName: "Pei" },
+      { text: "https://www.facebook.com/u/videos/778899 又貼一次" },
       deps(storage),
     );
     expect(r2.reply).toContain("已經收過了");
@@ -127,7 +126,7 @@ describe("runCollect", () => {
   it("未知網域 fallback → 平台 unknown(不誤猜 instagram)", async () => {
     const storage = new MemoryStorage();
     await runCollect(
-      { text: "https://random.com/p/whatever 測試", senderName: "Pei" },
+      { text: "https://random.com/p/whatever 測試" },
       deps(storage),
     );
     const row = (await storage.readAll())[0]!;
@@ -138,7 +137,7 @@ describe("runCollect", () => {
     const storage = new MemoryStorage();
     const inner = "https://www.instagram.com/reel/CxYz_-1";
     const wrapped = `https://l.facebook.com/l.php?u=${encodeURIComponent(inner)}&fbclid=abc`;
-    await runCollect({ text: `${wrapped} 分享來的`, senderName: "Pei" }, deps(storage));
+    await runCollect({ text: `${wrapped} 分享來的` }, deps(storage));
     const row = (await storage.readAll())[0]!;
     expect(row.平台).toBe("instagram");
     expect(row.連結).toBe(inner);
@@ -150,7 +149,7 @@ describe("runCollect", () => {
       throw new Error("sheet 寫入炸了");
     };
     const r = await runCollect(
-      { text: "https://youtu.be/dQw4w9WgXcQ x", senderName: "Pei" },
+      { text: "https://youtu.be/dQw4w9WgXcQ x" },
       deps(storage),
     );
     expect(r.reply).toContain("寫入失敗");
@@ -164,7 +163,7 @@ describe("runCollect", () => {
     };
     let persistFailed = false;
     const r = await runCollect(
-      { text: "https://youtu.be/dQw4w9WgXcQ x", senderName: "Pei" },
+      { text: "https://youtu.be/dQw4w9WgXcQ x" },
       { ...deps(storage), onPersistError: () => (persistFailed = true) },
     );
     expect(persistFailed).toBe(true); // drain 收得到「沒持久化」訊號
@@ -175,7 +174,7 @@ describe("runCollect", () => {
     const storage = new MemoryStorage();
     let persistFailed = false;
     await runCollect(
-      { text: "https://youtu.be/dQw4w9WgXcQ x", senderName: "Pei" },
+      { text: "https://youtu.be/dQw4w9WgXcQ x" },
       { ...deps(storage), onPersistError: () => (persistFailed = true) },
     );
     expect(persistFailed).toBe(false);
