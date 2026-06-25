@@ -3,8 +3,13 @@
  * - 最小權限:只用 spreadsheets scope。
  * - 寫入一律 RAW(避免影片ID/開頭 0 被當數字)。
  * - append 用 values.append;不刪列(參考池是 voc 永久池,prune 已退役)。
- * - 不自建/不覆寫表頭:參考池由 voc `init-sheet` 擁有;表頭缺/不齊一律 fail-fast,
- *   不替 voc 動表結構(避免錯欄寫入靜默毀資料)。
+ * - 不自建/不覆寫表頭:參考池由 voc `init-sheet` 擁有;bot 不替 voc 動表結構。
+ *
+ * 表頭飄移防護(2026-06-26):欄位對映改「依實際表頭具名解析」,不再假設固定欄序
+ * (A=平台 B=連結 C=挑 D=加入日期)。表頭被重排、前面多一欄(如 legacy `id`)、後面有空欄,
+ * 都能把值寫到正確的具名欄、讀回也對得上,而不是因為「順序/長度不完全相等」就把整輪 drain
+ * 打掛(舊版 fail-fast 條件)。唯一仍 fail-fast 的情形 = 某個必要欄「整個不存在」——
+ * 那才是真的會錯欄毀 voc 池,寧可停下等人對齊(維持 CLAUDE.md 安全網本意)。
  */
 import { google, type sheets_v4 } from "googleapis";
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
@@ -22,8 +27,14 @@ export interface GoogleSheetsOptions {
   sheetName: string;
 }
 
+/** 表頭解析結果:每個必要欄的 0-based 欄位索引 + 整列寬度。 */
+export interface HeaderLayout {
+  indexOf: Record<string, number>;
+  width: number;
+}
+
 /** 0-based 欄索引 → A1 欄字母(0→A, 25→Z, 26→AA)。 */
-function colLetter(index: number): string {
+export function colLetter(index: number): string {
   let n = index;
   let s = "";
   do {
@@ -33,7 +44,60 @@ function colLetter(index: number): string {
   return s;
 }
 
-const LAST_COL = colLetter(POOL_COLUMNS.length - 1);
+/**
+ * 依「實際表頭」解析每個必要欄的 0-based 索引(純函式,好測)。
+ * 必要欄整個缺席 → 丟錯(不錯欄寫入、不默默毀池);順序/多餘空欄/前置欄都容忍。
+ */
+export function resolveHeaderIndexes(
+  header: readonly unknown[],
+  required: readonly string[],
+  label: string,
+): HeaderLayout {
+  const cells = header.map((h) => String(h ?? "").trim());
+  const indexOf: Record<string, number> = {};
+  const missing: string[] = [];
+  for (const col of required) {
+    const idx = cells.indexOf(col);
+    if (idx < 0) missing.push(col);
+    else indexOf[col] = idx;
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `${label}表頭缺少必要欄 [${missing.join(",")}],拒絕寫入(避免錯欄毀資料)。` +
+        `現有=[${cells.join(",")}] 需要=[${required.join(",")}]。請對齊 voc schema.REFS。`,
+    );
+  }
+  return { indexOf, width: Math.max(cells.length, required.length) };
+}
+
+/** 把一列物件依解析索引排成整列寬度字串陣列(該欄外留空)。 */
+export function placeRow(
+  row: Record<string, unknown>,
+  columns: readonly string[],
+  layout: HeaderLayout,
+): string[] {
+  const cells: string[] = new Array<string>(layout.width).fill("");
+  for (const col of columns) {
+    const idx = layout.indexOf[col];
+    if (idx === undefined) continue; // resolve 階段已保證存在;防禦性
+    cells[idx] = String(row[col] ?? "");
+  }
+  return cells;
+}
+
+/** 反向:依解析索引,把實際列的 cell 取回具名欄物件。 */
+export function readNamedRow(
+  cells: readonly string[],
+  columns: readonly string[],
+  layout: HeaderLayout,
+): Record<string, string> {
+  const obj: Record<string, string> = {};
+  for (const col of columns) {
+    const idx = layout.indexOf[col];
+    obj[col] = idx === undefined ? "" : String(cells[idx] ?? "");
+  }
+  return obj;
+}
 
 /**
  * 429 / 5xx 退避重試(沿用 th-ops 策略)。其餘錯誤直接丟。
@@ -92,6 +156,7 @@ export class GoogleSheetsStorage implements Storage {
   private sheets: sheets_v4.Sheets;
   private readonly sheetId: string;
   private readonly sheetName: string;
+  private layoutCache?: HeaderLayout;
 
   constructor(opts: GoogleSheetsOptions) {
     this.sheetId = opts.sheetId;
@@ -109,18 +174,6 @@ export class GoogleSheetsStorage implements Storage {
     return `'${this.sheetName}'!${a1}`;
   }
 
-  private rowToValues(row: RefRow): string[] {
-    return POOL_COLUMNS.map((c) => String(row[c] ?? ""));
-  }
-
-  private valuesToRow(values: string[]): RefRow {
-    const obj = {} as Record<string, string>;
-    POOL_COLUMNS.forEach((c, i) => {
-      obj[c] = values[i] ?? "";
-    });
-    return obj as unknown as RefRow;
-  }
-
   /** 確認分頁存在(參考池由 voc 擁有,bot 不自建);不存在 → fail-fast。 */
   private async assertTab(): Promise<void> {
     const meta = await withRetry("取分頁清單", () =>
@@ -136,34 +189,34 @@ export class GoogleSheetsStorage implements Storage {
     );
   }
 
-  async ensureHeader(): Promise<void> {
+  /**
+   * 讀「實際表頭」並解析具名欄索引(每實例快取一次)。
+   * 缺必要欄 → resolveHeaderIndexes 丟錯;這也是 ensureHeader 的早期 fail-fast 來源。
+   */
+  private async layout(): Promise<HeaderLayout> {
+    if (this.layoutCache) return this.layoutCache;
     await this.assertTab();
     const res = await withRetry("讀表頭", () =>
       this.sheets.spreadsheets.values.get({
         spreadsheetId: this.sheetId,
-        range: this.range(`A1:${LAST_COL}1`),
+        range: this.range("1:1"),
       }),
     );
-    const header = res.data.values?.[0] ?? [];
-    const expected = POOL_COLUMNS as string[];
-    const aligned =
-      header.length === expected.length && expected.every((c, i) => header[i] === c);
-    if (!aligned) {
-      // 不替 voc 改表頭:append 用固定欄序硬塞,表頭錯位會「錯欄寫入」(平台值落到連結欄之類)
-      // 靜默毀 voc 的池。寧可停在這也不要默默寫壞。請對齊 voc schema.REFS 後再跑。
-      throw new Error(
-        `參考池表頭與 schema 不一致,拒絕寫入(避免錯欄毀資料)。` +
-          `現有=[${header.join(",")}] 期望=[${expected.join(",")}]。請對齊 voc schema.REFS。`,
-      );
-    }
+    this.layoutCache = resolveHeaderIndexes(res.data.values?.[0] ?? [], POOL_COLUMNS, "參考池");
+    return this.layoutCache;
+  }
+
+  async ensureHeader(): Promise<void> {
+    // 不替 voc 改表頭:只「讀 + 解析 + 驗證必要欄齊全」。缺欄就丟錯等人對齊。
+    await this.layout();
   }
 
   /** 讀原始 values(A2 起),回 [實體列號, 該列字串陣列]。空白列跳過但列號仍正確。 */
-  private async rawRows(): Promise<{ rowNumber: number; cells: string[] }[]> {
+  private async rawRows(layout: HeaderLayout): Promise<{ rowNumber: number; cells: string[] }[]> {
     const res = await withRetry("讀資料", () =>
       this.sheets.spreadsheets.values.get({
         spreadsheetId: this.sheetId,
-        range: this.range(`A2:${LAST_COL}`),
+        range: this.range(`A2:${colLetter(layout.width - 1)}`),
       }),
     );
     const values = res.data.values ?? [];
@@ -177,27 +230,32 @@ export class GoogleSheetsStorage implements Storage {
   }
 
   async readAll(): Promise<RefRow[]> {
-    return (await this.rawRows()).map((r) => this.valuesToRow(r.cells));
+    const layout = await this.layout();
+    return (await this.rawRows(layout)).map(
+      (r) => readNamedRow(r.cells, POOL_COLUMNS, layout) as unknown as RefRow,
+    );
   }
 
   async readRows(): Promise<DuplicateHit[]> {
-    return (await this.rawRows()).map((r) => ({
-      row: this.valuesToRow(r.cells),
+    const layout = await this.layout();
+    return (await this.rawRows(layout)).map((r) => ({
+      row: readNamedRow(r.cells, POOL_COLUMNS, layout) as unknown as RefRow,
       rowNumber: r.rowNumber,
     }));
   }
 
   async append(row: RefRow): Promise<void> {
+    const layout = await this.layout();
     const key = dedupKey(row.連結);
     await withRetry(
       "append",
       () =>
         this.sheets.spreadsheets.values.append({
           spreadsheetId: this.sheetId,
-          range: this.range(`A1:${LAST_COL}`),
+          range: this.range(`A1:${colLetter(layout.width - 1)}`),
           valueInputOption: "RAW",
           insertDataOption: "INSERT_ROWS",
-          requestBody: { values: [this.rowToValues(row)] },
+          requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, POOL_COLUMNS, layout)] },
         }),
       {
         // 冪等護欄:呼叫端(collect)已先去重,故重試前若這連結 key 已在表上,
