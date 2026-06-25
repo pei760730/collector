@@ -25,7 +25,8 @@ jobs:
           cache: npm
       - run: npm ci
       - name: drain
-        run: npm run drain
+        # 留存輸出供失敗通知擷取真因(default shell 已含 -o pipefail,npm 退出碼會正確傳遞)。
+        run: npm run drain 2>&1 | tee drain.log
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
@@ -51,5 +52,8 @@ jobs:
           TG_CHAT: ${{ secrets.ERROR_CHAT_ID }}
         run: |
           if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then echo "no TELEGRAM_BOT_TOKEN / ERROR_CHAT_ID → skip"; exit 0; fi
-          MSG="🔴 short-video-bot collect 失敗(可能表頭漂移/ALLOWED_CHAT_IDS 未設)。${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # 貼真實錯誤尾巴,別再寫死猜測原因(chat-only owner 不開 log)。抓不到就退中性訊息。
+          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | tail -n 2 | cut -c1-280)
+          [ -z "$ERR" ] && ERR="(未擷取到錯誤,請看下方 log)"
+          MSG="🔴 short-video-bot collect 失敗：${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -sS --max-time 20 "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" --data-urlencode "chat_id=${TG_CHAT}" --data-urlencode "text=${MSG}" >/dev/null && echo "telegram notified" || echo "telegram notify failed (ignored)"
