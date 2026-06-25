@@ -124,6 +124,39 @@ describe("extractVideoId", () => {
     expect(r.videoId).toBe("");
   });
 
+  it("X(Twitter)/status/<id> → x_", () => {
+    expect(
+      extractVideoId("X", "https://x.com/someone/status/1234567890123456789").videoId,
+    ).toBe("x_1234567890123456789");
+    expect(
+      extractVideoId("X", "https://twitter.com/i/web/status/55667788").videoId,
+    ).toBe("x_55667788");
+  });
+
+  it("X 個人頁(無 status)→ 空 videoId + unsupported", () => {
+    const r = extractVideoId("X", "https://x.com/someone");
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("");
+  });
+
+  it("抖音 /video/<id> → douyin_", () => {
+    expect(
+      extractVideoId("抖音", "https://www.douyin.com/video/7234567890123456789").videoId,
+    ).toBe("douyin_7234567890123456789");
+  });
+
+  it("抖音 19 位純數字路徑 fallback → douyin_", () => {
+    expect(
+      extractVideoId("抖音", "https://www.douyin.com/share/1234567890123456789").videoId,
+    ).toBe("douyin_1234567890123456789");
+  });
+
+  it("抖音 個人頁(無影片)→ 空 videoId + unsupported", () => {
+    const r = extractVideoId("抖音", "https://www.douyin.com/user/MS4wLjAxlong");
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("");
+  });
+
   it("Threads /post/<id>", () => {
     const r = extractVideoId("Threads", "https://www.threads.com/@u/post/DZwtc9Jk7Yf");
     expect(r.videoId).toBe("threads_DZwtc9Jk7Yf");
