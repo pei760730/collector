@@ -1,6 +1,6 @@
 /**
  * 收集 pipeline handler。
- * runCollect 不依賴 Telegraf —— 吃 {text, senderName} 回 {reply, error},
+ * runCollect 不依賴 Telegraf —— 吃 {text} 回 {reply, error},
  * 方便用 MemoryStorage 寫整合測試。Telegraf wiring 在 router.ts。
  */
 import { parseMessage, NoUrlError } from "../../pipeline/parse.js";
@@ -47,14 +47,14 @@ export interface CollectResult {
 }
 
 export async function runCollect(
-  input: { text: string; senderName?: string },
+  input: { text: string },
   deps: CollectDeps,
 ): Promise<CollectResult> {
   const now = deps.now ?? Date.now;
 
   let parsed;
   try {
-    parsed = parseMessage({ text: input.text, senderName: input.senderName });
+    parsed = parseMessage({ text: input.text });
   } catch (err) {
     if (err instanceof NoUrlError) {
       return { reply: formatErrorMsg() };

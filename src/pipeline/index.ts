@@ -3,7 +3,6 @@
  * parse → cleanUrl → detectPlatform → extractVideoId。
  * 去重 / 寫入屬於 I/O,留給 collect handler;這裡保持純函式好測試。
  */
-import { parseMessage, type ParseInput } from "./parse.js";
 import { cleanUrl } from "./cleanUrl.js";
 import { detectPlatform } from "./detectPlatform.js";
 import { extractVideoId } from "./extractVideoId.js";
@@ -44,14 +43,6 @@ export function dedupKey(url: string): string {
 }
 
 /**
- * 從訊息產出一筆「參考池」草稿列(尚未去重、尚未寫入)。
- * @param now 可注入時間(epoch ms),預設 Date.now,利於測試。
- */
-export function buildDraft(input: ParseInput, now: () => number = Date.now): Draft {
-  return assembleDraft(parseMessage(input), now); // parseMessage 可能丟 NoUrlError
-}
-
-/**
  * 從已解析訊息組草稿。collect handler 想在 parse 之後、組裝之前
  * 插入短網址展開時用這支(把 parsed.rawUrl 換成展開後的網址)。
  */
@@ -61,7 +52,7 @@ export function assembleDraft(parsed: ParsedMessage, now: () => number = Date.no
   // 只在「真的比對到網域」時抽 id,判斷 unsupported(給回覆提示)。fallback/error 一律 unsupported。
   const vid =
     platform.method === "domain_match"
-      ? extractVideoId(platform.platform, cleaned.cleanUrl, now)
+      ? extractVideoId(platform.platform, cleaned.cleanUrl)
       : { videoId: "", unsupported: true };
 
   const row: RefRow = {

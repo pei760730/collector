@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { extractVideoId } from "../src/pipeline/extractVideoId.js";
 
-const FIXED = () => 1_700_000_000_000;
-
 describe("extractVideoId", () => {
   it("TikTok video/<id>", () => {
     expect(extractVideoId("TikTok", "https://www.tiktok.com/@u/video/7234567890").videoId).toBe(
@@ -58,14 +56,14 @@ describe("extractVideoId", () => {
   });
 
   it("YouTube 非 11 碼(12 碼)→ 不截斷,落 unknown_(unsupported)", () => {
-    const r = extractVideoId("YouTube", "https://www.youtube.com/watch?v=AAAAAAAAAAAA", FIXED);
+    const r = extractVideoId("YouTube", "https://www.youtube.com/watch?v=AAAAAAAAAAAA");
     expect(r.unsupported).toBe(true);
-    expect(r.videoId).toBe("unknown_1700000000000");
+    expect(r.videoId).toBe("");
   });
 
-  it("YouTube shorts 13 碼 → 不截斷,落 unknown_", () => {
+  it("YouTube shorts 13 碼 → 不截斷,落 unsupported", () => {
     expect(
-      extractVideoId("YouTube", "https://www.youtube.com/shorts/ABCDEFGHIJKLM", FIXED).unsupported,
+      extractVideoId("YouTube", "https://www.youtube.com/shorts/ABCDEFGHIJKLM").unsupported,
     ).toBe(true);
   });
 
@@ -82,7 +80,7 @@ describe("extractVideoId", () => {
   });
 
   it("Facebook fb.watch/<code> → fbw_", () => {
-    const r = extractVideoId("Facebook", "https://fb.watch/xyz", FIXED);
+    const r = extractVideoId("Facebook", "https://fb.watch/xyz");
     expect(r.unsupported).toBe(false);
     expect(r.videoId).toBe("fbw_xyz");
   });
@@ -115,15 +113,15 @@ describe("extractVideoId", () => {
   });
 
   it("Facebook 純個人頁(四形態皆不中)→ unknown + unsupported", () => {
-    const r = extractVideoId("Facebook", "https://www.facebook.com/someuser", FIXED);
+    const r = extractVideoId("Facebook", "https://www.facebook.com/someuser");
     expect(r.unsupported).toBe(true);
-    expect(r.videoId).toBe("unknown_1700000000000");
+    expect(r.videoId).toBe("");
   });
 
-  it("抓不到 → unknown_<ts>", () => {
-    const r = extractVideoId("TikTok", "https://www.tiktok.com/discover", FIXED);
+  it("抓不到 → 空 videoId + unsupported", () => {
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/discover");
     expect(r.unsupported).toBe(true);
-    expect(r.videoId).toBe("unknown_1700000000000");
+    expect(r.videoId).toBe("");
   });
 
   it("Threads /post/<id>", () => {
@@ -133,24 +131,24 @@ describe("extractVideoId", () => {
   });
 
   it("YouTube channel/@user 不該被當成影片", () => {
-    expect(extractVideoId("YouTube", "https://www.youtube.com/channel/UCabcdefghij", FIXED).unsupported).toBe(true);
-    expect(extractVideoId("YouTube", "https://www.youtube.com/@someuser11", FIXED).unsupported).toBe(true);
+    expect(extractVideoId("YouTube", "https://www.youtube.com/channel/UCabcdefghij").unsupported).toBe(true);
+    expect(extractVideoId("YouTube", "https://www.youtube.com/@someuser11").unsupported).toBe(true);
   });
 
   it("TikTok ?sec_uid=<19位> 不該被偽造成影片 id", () => {
-    const r = extractVideoId("TikTok", "https://www.tiktok.com/@u?sec_uid=1234567890123456789", FIXED);
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/@u?sec_uid=1234567890123456789");
     expect(r.unsupported).toBe(true);
-    expect(r.videoId).toBe("unknown_1700000000000");
+    expect(r.videoId).toBe("");
   });
 
   it("TikTok 20 位數字不該截前 19 位當 id", () => {
-    const r = extractVideoId("TikTok", "https://www.tiktok.com/x/12345678901234567890", FIXED);
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/x/12345678901234567890");
     expect(r.unsupported).toBe(true);
   });
 
   it("TikTok discover 搜尋頁(帶 ?)不是影片 → unsupported", () => {
-    const r = extractVideoId("TikTok", "https://www.tiktok.com/discover/funny?lang=en", FIXED);
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/discover/funny?lang=en");
     expect(r.unsupported).toBe(true);
-    expect(r.videoId).toBe("unknown_1700000000000");
+    expect(r.videoId).toBe("");
   });
 });

@@ -49,19 +49,14 @@ function hostnameOf(cleanUrl: string): string | null {
 export function detectPlatform(cleanUrl: string): PlatformInfo {
   const host = hostnameOf(cleanUrl);
   if (!host) {
-    return { platform: "Unknown", icon: "❓", confidence: "low", method: "error" };
+    return { platform: "Unknown", method: "error" };
   }
   for (const rule of RULES) {
     if (rule.domains.some((d) => hostMatches(host, d))) {
-      return {
-        platform: rule.platform,
-        icon: rule.icon,
-        confidence: "high",
-        method: "domain_match",
-      };
+      return { platform: rule.platform, method: "domain_match" };
     }
   }
-  // fallback:認不得的網域標 Unknown(不誤猜 Instagram)。confidence=low。
-  // 注意:fallback 時 assembleDraft 不會跑抽 id(method!=="domain_match"),故落 unknown_。
-  return { platform: "Unknown", icon: "❓", confidence: "low", method: "fallback" };
+  // fallback:認不得的網域標 Unknown(不誤猜 Instagram)。
+  // 注意:fallback 時 assembleDraft 不會跑抽 id(method!=="domain_match"),故落 unsupported。
+  return { platform: "Unknown", method: "fallback" };
 }
