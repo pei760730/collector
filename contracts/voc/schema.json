@@ -1,0 +1,27 @@
+{
+  "_generated": "自動產生,請勿手改 —— 來源 src/voc/schema.py + normalize.py,產生器 scripts/gen_schema_json.py。改 schema 後重跑再 commit。",
+  "schemaVersion": "1",
+  "writeMode": "direct",
+  "writeTab": "參考池",
+  "columns": [
+    "平台",
+    "連結",
+    "挑",
+    "加入日期"
+  ],
+  "platformCodes": [
+    "instagram",
+    "facebook",
+    "youtube",
+    "xiaohongshu",
+    "tiktok",
+    "x",
+    "threads",
+    "douyin"
+  ],
+  "dedup": {
+    "separator": ":",
+    "namespaced": true,
+    "_note": "key = 平台<separator>影片id,帶平台命名空間 → 跨平台同數字 id 不撞。bot 端分隔符可不同(_),只需分群等價(contracts/dedup_vectors.json 守門)。"
+  }
+}
