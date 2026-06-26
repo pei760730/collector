@@ -48,6 +48,8 @@ const SHORT_URL_HOSTS = new Set([
   // EXPAND_SHORT_URLS=true 時展開成正規 /video/ 連結;展開失敗會優雅退回原值(不會更糟)。
   "vm.tiktok.com",
   "vt.tiktok.com",
+  // 抖音 App 分享短連結:展開成 douyin.com/video/<id> 才抽得到 douyin_<id> 去重。
+  "v.douyin.com",
 ]);
 
 /**
