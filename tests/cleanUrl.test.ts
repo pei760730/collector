@@ -36,6 +36,8 @@ describe("cleanUrl", () => {
     // TikTok 短連結要被認出來,EXPAND_SHORT_URLS 才會展開 → 短/長連結去重一致。
     expect(cleanUrl("https://vm.tiktok.com/ZGJabc/").isShortUrl).toBe(true);
     expect(cleanUrl("https://vt.tiktok.com/ZSabc/").isShortUrl).toBe(true);
+    // 抖音 App 分享短連結同理。
+    expect(cleanUrl("https://v.douyin.com/iAbCdEf/").isShortUrl).toBe(true);
   });
 
   it("只移除追蹤參數後不留空 ?", () => {
