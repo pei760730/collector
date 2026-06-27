@@ -86,9 +86,9 @@ describe("voc 契約:dedup 分群等價(TS groupKey 對 voc dedup_vectors)", () 
     });
   }
 
-  // edge_cases 的 id/path 預期:跳過「靠展開消弭」的已知 TS/Python 分歧(tiktok 短路徑:
-  // 未展開時 TS 抽 id、Python 退路徑;production 先展開兩邊一致)。其餘 TS 與引擎同。
-  for (const e of vectors.edge_cases.filter((e) => !e.why.includes("展開"))) {
+  // 2026-06-27 起所有 edge_case 兩語一致(裸 19 碼抽取已砍除,vt.tiktok 短路徑 TS 與 Python 都退路徑),
+  // 不再有「靠展開消弭」的 TS/Python 分歧 → 全部都驗(無 skip)。
+  for (const e of vectors.edge_cases) {
     it(`edge「${e.name}」TS groupKey 為 ${e.expect}`, () => {
       const got = isPathKey(dedupKey(e.url)) ? "path" : "id";
       expect(got).toBe(e.expect);

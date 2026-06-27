@@ -8,16 +8,16 @@ describe("extractVideoId", () => {
     );
   });
 
-  it("TikTok item_id=", () => {
-    expect(
-      extractVideoId("TikTok", "https://www.tiktok.com/x?item_id=12345").videoId,
-    ).toBe("tiktok_12345");
+  it("TikTok item_id=(query)2026-06-27 不再抽 → unsupported(query 注入面,四語對齊只認 path /video/)", () => {
+    const r = extractVideoId("TikTok", "https://www.tiktok.com/x?item_id=12345");
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("");
   });
 
-  it("TikTok 19 位純數字 fallback", () => {
-    expect(
-      extractVideoId("TikTok", "https://vt.tiktok.com/1234567890123456789").videoId,
-    ).toBe("tiktok_1234567890123456789");
+  it("TikTok 19 位純數字短路徑 2026-06-27 不再抽 → unsupported(靠展開成 /video/;真實短碼非純數字)", () => {
+    const r = extractVideoId("TikTok", "https://vt.tiktok.com/1234567890123456789");
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("");
   });
 
   it("Instagram /reel/<code>(取 code 那組,非 reel)", () => {
@@ -145,10 +145,10 @@ describe("extractVideoId", () => {
     ).toBe("douyin_7234567890123456789");
   });
 
-  it("抖音 19 位純數字路徑 fallback → douyin_", () => {
-    expect(
-      extractVideoId("抖音", "https://www.douyin.com/share/1234567890123456789").videoId,
-    ).toBe("douyin_1234567890123456789");
+  it("抖音 19 位純數字短路徑 2026-06-27 不再抽 → unsupported(同 TikTok,只認 path /video/)", () => {
+    const r = extractVideoId("抖音", "https://www.douyin.com/share/1234567890123456789");
+    expect(r.unsupported).toBe(true);
+    expect(r.videoId).toBe("");
   });
 
   it("抖音 個人頁(無影片)→ 空 videoId + unsupported", () => {
