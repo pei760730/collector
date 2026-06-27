@@ -12,12 +12,12 @@
  * 那才是真的會錯欄毀 voc 池,寧可停下等人對齊(維持 CLAUDE.md 安全網本意)。
  */
 import { google, type sheets_v4 } from "googleapis";
+import { withRetry } from "@pei760730/collector-core";
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
 import type { RefRow } from "../types.js";
 import { POOL_COLUMNS } from "../types.js";
 import { dedupKey } from "../pipeline/index.js";
 import { computeStats } from "./computeStats.js";
-import { logger } from "../utils/logger.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
@@ -99,58 +99,8 @@ export function readNamedRow(
   return obj;
 }
 
-/**
- * 429 / 5xx 退避重試(沿用 th-ops 策略)。其餘錯誤直接丟。
- * `alreadyDone`:重試前的冪等護欄 —— 非冪等寫入(append)可能「寫成功但回應遺失」
- * 觸發重試,導致雙寫;重試前先問一次「上次其實成功了嗎?」是就視為完成、不再重打。
- */
-async function withRetry<T>(
-  label: string,
-  fn: () => Promise<T>,
-  opts: { tries?: number; alreadyDone?: () => Promise<boolean> } = {},
-): Promise<T> {
-  const tries = opts.tries ?? 4;
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= tries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const e = err as { code?: number | string; response?: { status?: number }; message?: string };
-      const status = typeof e?.code === "number" ? e.code : e?.response?.status;
-      const httpRetryable =
-        status === 429 || (typeof status === "number" && status >= 500 && status < 600);
-      // 暫時性網路錯誤(無 HTTP status):googleapis 取 token 大封包被 WSL2/雲端 MTU 丟造成
-      // "Premature close",或 socket 重置(ECONNRESET/ETIMEDOUT/EPIPE/ECONNREFUSED)。
-      // 這些 ~20% cron 失敗的元兇沒有 code/status,先前不重試直接整輪崩。一律歸為可重試。
-      const codeStr = typeof e?.code === "string" ? e.code : "";
-      const msg = typeof e?.message === "string" ? e.message : "";
-      const networkRetryable =
-        /Premature close/i.test(msg) ||
-        /ECONNRESET|ETIMEDOUT|EPIPE|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(
-          `${codeStr} ${msg}`,
-        );
-      const retryable = httpRetryable || networkRetryable;
-      if (!retryable || attempt === tries) throw err;
-      if (opts.alreadyDone) {
-        try {
-          if (await opts.alreadyDone()) {
-            logger.warn(`${label} 第 ${attempt} 次回應遺失但寫入已存在,視為成功(不重打)`);
-            return undefined as T;
-          }
-        } catch {
-          // 護欄查詢本身失敗就照常重試,不放大故障。
-        }
-      }
-      const backoff = 500 * 2 ** (attempt - 1); // 0.5s,1s,2s
-      logger.warn(
-        `${label} 第 ${attempt}/${tries} 次失敗(code=${status ?? codeStr ?? "?"}),${backoff}ms 後重試`,
-      );
-      await new Promise((r) => setTimeout(r, backoff));
-    }
-  }
-  throw lastErr;
-}
+// 429 / 5xx / 暫態網路錯誤的退避重試 + `alreadyDone` 冪等護欄,改由 collector-core 提供
+// canonical `withRetry`(三個 collector 各自副本的嚴格聯集);Sheets glue(JWT/sheets_v4)留本 repo。
 
 export class GoogleSheetsStorage implements Storage {
   private sheets: sheets_v4.Sheets;

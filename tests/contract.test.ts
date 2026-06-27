@@ -12,6 +12,7 @@
  *  3. dedup 分群等價:bot groupKey 對 dedup_vectors 的 same_group 收斂、distinct 分開
  *     (跨語言契約的 TS 側;Python 側由 voc test_dedup_contract 守)。
  */
+import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
@@ -30,11 +31,18 @@ interface DedupVectors {
   edge_cases: { name: string; why: string; url: string; expect: "id" | "path" }[];
 }
 
+// schema.json 仍 vendored 在 contracts/voc/(由 voc schema.py codegen、core 不持有此檔)。
 const load = <T>(rel: string): T =>
   JSON.parse(readFileSync(new URL(`../contracts/voc/${rel}`, import.meta.url), "utf8")) as T;
 
+// dedup_vectors.json 改讀 @pei760730/collector-core 隨包發布的 canonical(core 是 TS pipeline SSOT,
+// dedupKey 即 core groupKey,經 dep pin)。不再在本 repo vendor 這份;改去重規則 → 先改 core canonical → bump core tag。
+const _vectorsPath = createRequire(import.meta.url).resolve(
+  "@pei760730/collector-core/contracts/voc/dedup_vectors.json",
+);
+
 const schema = load<EngineSchema>("schema.json");
-const vectors = load<DedupVectors>("dedup_vectors.json");
+const vectors = JSON.parse(readFileSync(_vectorsPath, "utf8")) as DedupVectors;
 
 describe("voc 契約:參考池 schema", () => {
   it("bot 寫的參考池欄名/順序 == voc schema.json columns", () => {
