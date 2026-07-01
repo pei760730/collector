@@ -42,18 +42,19 @@ jobs:
           # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
           ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}
 
-      # drain 整層崩潰(如表頭漂移 ensureHeader 拒寫)會在逐筆 notifyError 之前 process.exit(1) →
-      # 走不到 in-app 告警。這一步補:job 失敗就 Telegram 喊一聲,否則 chat-only owner 只剩看不到的紅燈。
-      - name: Notify Telegram on failure
+      # 失敗才報:drain job 崩潰時抓 log 尾巴真因,收攏推到統一通知 bot(@MYNOOTIFYBot),走 kai-notify(fail-soft)。
+      - name: Build failure message
         if: failure()
-        continue-on-error: true
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT: ${{ secrets.ERROR_CHAT_ID }}
+        id: failmsg
         run: |
-          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then echo "no TELEGRAM_BOT_TOKEN / ERROR_CHAT_ID → skip"; exit 0; fi
-          # 貼真實錯誤尾巴,別再寫死猜測原因(chat-only owner 不開 log)。抓不到就退中性訊息。
-          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | tail -n 2 | cut -c1-280)
-          [ -z "$ERR" ] && ERR="(未擷取到錯誤,請看下方 log)"
-          MSG="🔴 short-video-bot collect 失敗：${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -sS --max-time 20 "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" --data-urlencode "chat_id=${TG_CHAT}" --data-urlencode "text=${MSG}" >/dev/null && echo "telegram notified" || echo "telegram notify failed (ignored)"
+          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | tail -n 2 | tr '\n' ' ' | cut -c1-280)
+          [ -z "$ERR" ] && ERR="(未擷取到錯誤,請看 log)"
+          echo "text=🔴 short-video-bot collect 失敗:${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+      - name: Notify Kai on failure (kai-notify)
+        if: failure()
+        uses: pei760730/kai-notify@main
+        env:
+          KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
+          KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
+        with:
+          text: ${{ steps.failmsg.outputs.text }}
