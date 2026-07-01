@@ -52,7 +52,7 @@ jobs:
           echo "text=🔴 short-video-bot collect 失敗:${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
       - name: Notify Kai on failure (kai-notify)
         if: failure()
-        uses: pei760730/kai-notify@main
+        uses: pei760730/kai-notify@v1
         env:
           KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
           KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
