@@ -8,6 +8,10 @@ on:
     - cron: "*/5 * * * *" # 每 5 分(UTC,GitHub 排程下限);實際 GitHub 常拖到更久,非秒到。public Actions 免費無上限
   workflow_dispatch: {} # 手動補跑(要立刻收就按這個)
 
+# 最小權限:這條 workflow 只需要 checkout(寫入走 Sheets API,不碰 repo)。
+permissions:
+  contents: read
+
 # 同時只跑一個,避免兩個 job 並行領 getUpdates 互搶(會漏 ack)。
 concurrency:
   group: collect
@@ -25,7 +29,11 @@ jobs:
           cache: npm
       - run: npm ci
       - name: drain
-        # 留存輸出供失敗通知擷取真因(default shell 已含 -o pipefail,npm 退出碼會正確傳遞)。
+        # 留存輸出供失敗通知擷取真因。
+        # 顯式 `shell: bash` 讓 GitHub 用 `bash --noprofile --norc -eo pipefail` 跑;
+        # 預設 shell 是 `bash -e {0}`(無 pipefail),drain 崩潰的退出碼會被 tee 吃掉
+        # → job 假綠 → 下面 if: failure() 的告警永不觸發。這行為此而設,別刪。
+        shell: bash
         run: npm run drain 2>&1 | tee drain.log
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -47,7 +55,7 @@ jobs:
         if: failure()
         id: failmsg
         run: |
-          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | tail -n 2 | tr '\n' ' ' | python3 -c 'import sys;sys.stdout.write(sys.stdin.read()[:280])')
+          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | tail -n 2 | tr '\n' ' ' | python3 -c 'import sys;sys.stdout.write(sys.stdin.buffer.read().decode("utf-8","replace")[:280])')
           [ -z "$ERR" ] && ERR="(未擷取到錯誤,請看 log)"
           echo "text=🔴 short-video-bot collect 失敗:${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
       - name: Notify Kai on failure (kai-notify)
