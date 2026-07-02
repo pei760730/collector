@@ -1,0 +1,3 @@
+# vendored 契約檔強制 LF —— 跨平台(Windows checkout)不因 CRLF 讓 byte 級比對/未來 md5 守衛失準。
+# 對齊各 collector 的同款防護;SSoT 端已有對應設定,此為 vendor 副本端的防護。
+contracts/**/*.json text eol=lf

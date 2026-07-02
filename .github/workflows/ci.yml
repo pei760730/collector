@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# 最小權限:CI 只讀 code 跑測試,不需要任何寫入。
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
