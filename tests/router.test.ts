@@ -8,9 +8,7 @@ import type { Config } from "../src/config.js";
 function memoryConfig(overrides: Partial<Config> = {}): Config {
   return {
     telegramToken: "TEST:TOKEN",
-    mode: "polling",
     storage: "memory",
-    webhook: { domain: "", path: "/telegraf", port: 8080 },
     google: null, // memory 乾跑:pool=null,不碰真表
     errorChatId: "",
     allowedChatIds: [], // 預設不限制(乾跑);白名單測試在下方另傳

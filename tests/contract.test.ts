@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { dedupKey } from "../src/pipeline/index.js";
-import { detectPlatform } from "../src/pipeline/detectPlatform.js";
+import { detectPlatform } from "@pei760730/collector-core";
 import { PLATFORM_CODE, POOL_COLUMNS, type Platform } from "../src/types.js";
 
 interface EngineSchema {

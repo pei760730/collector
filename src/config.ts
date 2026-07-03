@@ -30,21 +30,6 @@ function boolEnv(name: string, fallback: boolean): boolean {
   return ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
 }
 
-/** 數字環境變數;打錯成非數字 / 低於下限直接丟錯(fail-fast,不要默默 NaN 或負值)。 */
-function numEnv(name: string, fallback: number, opts: { min?: number } = {}): number {
-  const v = process.env[name];
-  if (v == null || v.trim() === "") return fallback;
-  const n = Number(v.trim());
-  if (!Number.isFinite(n)) {
-    throw new Error(`環境變數 ${name} 不是合法數字:'${v}'`);
-  }
-  if (opts.min != null && n < opts.min) {
-    // 例:DEDUPE_PERIOD_DAYS 設負數會讓「ageInDays > 負數」恆真 → 去重整個失效。
-    throw new Error(`環境變數 ${name} 不可小於 ${opts.min}:'${v}'`);
-  }
-  return n;
-}
-
 /** 限定值環境變數;不在白名單直接丟錯。 */
 function enumEnv<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
   const v = (process.env[name] ?? "").trim();
@@ -72,14 +57,11 @@ function chatIdsEnv(name: string): number[] {
   });
 }
 
-export type BotMode = "polling" | "webhook";
 export type StorageMode = "sheets" | "memory";
 
 export interface Config {
   telegramToken: string;
-  mode: BotMode;
   storage: StorageMode;
-  webhook: { domain: string; path: string; port: number };
   /** memory 乾跑模式下為 null(不需 Google 憑證)。 */
   google: {
     /** 解析後的 service account 憑證物件。 */
@@ -137,7 +119,6 @@ let cached: Config | null = null;
 
 export function loadConfig(): Config {
   if (cached) return cached;
-  const mode = enumEnv("BOT_MODE", ["polling", "webhook"] as const, "polling");
   const storage = enumEnv("STORAGE", ["sheets", "memory"] as const, "sheets");
   // memory 乾跑模式不碰 Google 憑證,讓只有 token 也能啟動測 bot 回覆
   const google =
@@ -150,22 +131,13 @@ export function loadConfig(): Config {
         };
   cached = {
     telegramToken: required("TELEGRAM_BOT_TOKEN"),
-    mode,
     storage,
-    webhook: {
-      domain: optional("WEBHOOK_DOMAIN", ""),
-      path: optional("WEBHOOK_PATH", "/telegraf"),
-      port: numEnv("PORT", 8080, { min: 1 }),
-    },
     google,
     errorChatId: optional("ERROR_CHAT_ID", ""),
     allowedChatIds: chatIdsEnv("ALLOWED_CHAT_IDS"),
     expandShortUrls: boolEnv("EXPAND_SHORT_URLS", false),
     logLevel: optional("LOG_LEVEL", "info"),
   };
-  if (mode === "webhook" && !cached.webhook.domain) {
-    throw new Error("BOT_MODE=webhook 但未設 WEBHOOK_DOMAIN");
-  }
   // 公開 repo 防灌池:sheets 模式(=正式寫真表)必須設來源白名單,否則任何人都能餵 bot 寫進你的表。
   // 寧可 fail-fast 紅燈被發現,也不要默默大開。memory 乾跑不寫真表,免設。
   if (storage === "sheets" && cached.allowedChatIds.length === 0) {

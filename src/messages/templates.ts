@@ -4,7 +4,7 @@
  * 純文字最穩,emoji 照常顯示,不必跳脫。
  */
 import { PLATFORM_CODE, type Platform, type RefRow } from "../types.js";
-import { PLATFORM_ICON } from "../pipeline/detectPlatform.js";
+import { PLATFORM_ICON } from "@pei760730/collector-core";
 
 /** 小寫平台碼 → emoji。row.平台 存的是碼(tiktok…),不是顯示名。 */
 const ICON_BY_CODE: Record<string, string> = Object.fromEntries(

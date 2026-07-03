@@ -1,6 +1,6 @@
 /**
- * 進入點 —— 載設定、接 storage、起 bot。
- * BOT_MODE=polling(自架預設,長連線)或 webhook(需 WEBHOOK_DOMAIN)。
+ * 進入點 —— 載設定、接 storage、起 bot(long polling,本機開發用;生產走 Actions cron drain)。
+ * webhook 模式已於 2026-07-03 解散:生產是 cron drain、本機開發是 polling,webhook 從未上場。
  */
 import { loadConfig } from "./config.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
@@ -36,16 +36,8 @@ async function main(): Promise<void> {
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-  if (config.mode === "webhook") {
-    const { domain, path, port } = config.webhook;
-    // onLaunch callback 在 server 起來時觸發;不要 await(polling 會 block 到 stop)
-    void bot.launch({ webhook: { domain, hookPath: path, port } }, () =>
-      logger.info(`bot 已啟動(webhook):${domain}${path} :${port}`),
-    );
-  } else {
-    // long polling —— 自架預設,不需公網
-    void bot.launch(() => logger.info("bot 已啟動(long polling)"));
-  }
+  // long polling —— 本機開發用,不需公網(不要 await:polling 會 block 到 stop)
+  void bot.launch(() => logger.info("bot 已啟動(long polling)"));
 }
 
 main().catch((err) => {

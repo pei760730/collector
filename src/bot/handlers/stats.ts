@@ -6,7 +6,7 @@
  */
 import type { Storage } from "../../storage/Storage.js";
 import { PLATFORM_CODE, type Platform } from "../../types.js";
-import { PLATFORM_ICON } from "../../pipeline/detectPlatform.js";
+import { PLATFORM_ICON } from "@pei760730/collector-core";
 
 const ICON_BY_CODE: Record<string, string> = Object.fromEntries(
   (Object.keys(PLATFORM_CODE) as Platform[]).map((p) => [PLATFORM_CODE[p], PLATFORM_ICON[p]]),

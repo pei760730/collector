@@ -18,7 +18,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 **預設不碰(Claude Code / Owner 的領域):**
 - **Live bot 操作 / Sheet 實際寫入**(真的啟動 bot 收訊息、`STORAGE=sheets` 跑真表)
-- **與 voc 的對接契約**(`CLAUDE.md` §6 的參考池欄位:bot 直寫 voc `schema.REFS` 5 欄 `id/平台/連結/挑/加入日期`)—— 改欄名要兩 repo 一起,屬跨 repo 協調
+- **與 voc 的對接契約**(`CLAUDE.md` §6 的參考池欄位:bot 直寫 voc `schema.REFS` 4 欄 `平台/連結/挑/加入日期`(`id` 已於 2026-06-24 砍))—— 改欄名要兩 repo 一起,屬跨 repo 協調
 - **schema 設計判斷**(`POOL_COLUMNS` 加/砍欄、平台規則、去重策略的大方向)
 - `service_account.json`、`.env`(機密)
 
@@ -66,7 +66,7 @@ npm run build         # tsc 出 dist/index.js(Dockerfile CMD 依賴它)
 
 - 改 pipeline / schema / storage → 必補或改對應 `tests/`,跑 `npm test`。
 - 改 `Dockerfile` / `compose` → 確認 build context 正確、`dist/index.js` 出得來、機密走 volume/env 不烤進 image。
-- 碰 Sheet 寫入路徑只能 `STORAGE=memory` 乾跑;真表驗證用 `scripts/read-refs.ts` / `verify-sheet.ts` 讀回(API,不靠會亂碼的 terminal)。
+- 碰 Sheet 寫入路徑只能 `STORAGE=memory` 乾跑;真表驗證用 `scripts/verify-sheet.ts` 讀回(API,不靠會亂碼的 terminal)。
 - 反向驗證:bot/CLI 自報成功不算數,寫入後獨立讀回確認(Windows terminal 對中文+並行會吐假成功)。
 
 ## Codex 環境 quirks(踩過的雷)

@@ -3,9 +3,9 @@
  * runCollect 不依賴 Telegraf —— 吃 {text} 回 {reply, error},
  * 方便用 MemoryStorage 寫整合測試。Telegraf wiring 在 router.ts。
  */
-import { parseMessage, NoUrlError } from "../../pipeline/parse.js";
+import { parseMessage, NoUrlError } from "@pei760730/collector-core";
 import { assembleDraft, dedupKey } from "../../pipeline/index.js";
-import { hasShortHost } from "../../pipeline/cleanUrl.js";
+import { hasShortHost } from "@pei760730/collector-core";
 import type { Storage } from "../../storage/Storage.js";
 import { expandShortUrl } from "../../utils/expandUrl.js";
 import { logger } from "../../utils/logger.js";
