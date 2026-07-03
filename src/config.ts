@@ -8,7 +8,8 @@ import { readFileSync } from "node:fs";
 // override:true —— .env 蓋過系統既有環境變數。
 // 原因:Windows 系統環境若殘留舊/打錯的 TELEGRAM_BOT_TOKEN,dotenv 預設不覆蓋會讓
 // bot 拿到壞值(踩過 l→1 typo 的 401)。Docker 沒 .env 檔時此行 no-op,不影響真環境。
-dotenv.config({ override: true });
+// quiet:true —— dotenv v17 預設會印 tip 行,靜音避免污染 CI 輸出。
+dotenv.config({ override: true, quiet: true });
 
 function required(name: string): string {
   const v = process.env[name];
