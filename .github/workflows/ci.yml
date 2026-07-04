@@ -25,7 +25,17 @@ jobs:
       - run: npm ci
       # 守門:package.json 宣稱的 collector-core tag 必須 == 實際安裝版本。
       # npm ci 對 git dep 只驗 spec 字串不驗 lock resolved(PR #49 曾綠著裝舊版)。
-      - run: node scripts/check-core-version.mjs
+      # 三支 collector 共用同一段。core 的 exports 沒開放 ./package.json 子路徑,
+      # 要走 ./node_modules/ 檔案路徑直讀(裸 require 會 ERR_PACKAGE_PATH_NOT_EXPORTED)。
+      - run: |
+          node -e "
+          const spec=(require('./package.json').dependencies||{})['@pei760730/collector-core']||'';
+          const m=spec.match(/#v(.+)\$/);
+          if(!m){console.log('skip: not a git-tag dep');process.exit(0);}
+          const inst=require('./node_modules/@pei760730/collector-core/package.json').version;
+          if(inst!==m[1]){console.error('declared v'+m[1]+' !== installed '+inst);process.exit(1);}
+          console.log('collector-core ok: '+inst);
+          "
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
