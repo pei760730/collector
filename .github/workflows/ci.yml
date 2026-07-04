@@ -23,6 +23,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # 守門:package.json 宣稱的 collector-core tag 必須 == 實際安裝版本。
+      # npm ci 對 git dep 只驗 spec 字串不驗 lock resolved(PR #49 曾綠著裝舊版)。
+      - run: node scripts/check-core-version.mjs
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
