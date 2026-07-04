@@ -10,7 +10,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 **預設負責:**
 - `src/`(config / pipeline / storage / bot handlers / messages / utils / types)
 - `tests/`(Vitest)、`scripts/`(讀回驗證腳本)、`package.json` / `tsconfig*.json` / `vitest.config.ts`
-- `.github/workflows/`(`ci.yml` 測試、`collect.yml` cron drain 部署)、`Dockerfile` / `docker-compose.yml`(可選的雲端常駐路)
+- `.github/workflows/`(`ci.yml` 測試、`collect.yml` cron drain 部署)
 - bug 修復、refactor、lint/型別/測試修復、效能
 
 **被要求才碰:**
@@ -25,7 +25,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 ## 與 Claude Code 分工
 
 - **Claude Code / Owner**:設計判斷(schema、平台/去重策略)、跨 repo 對接協調(voc 契約、SA 分享)、live bot/Sheet 操作、`CLAUDE.md` 規則維護。
-- **Codex**:在 branch 上做可審查工程變更(code/tests/CI/Docker)、跑驗證、整理 commit/PR。
+- **Codex**:在 branch 上做可審查工程變更(code/tests/CI)、跑驗證、整理 commit/PR。
 - 跨領域任務:用下方 Handoff 格式交回 Claude Code 判斷,handoff 保持窄。
 - 誰最後改 code,誰在回報講清楚改了什麼、跑了哪些驗證、還剩哪些風險;不要假設對方已知上下文。
 - **同目錄同時只一個 active agent**:Claude 跟 Codex 共用同一個 working tree。動手前先 `git fetch` 看 `origin/main` 有沒有被對方推進;**不要兩邊同時改同一個檔**。真要並行,各開 `git worktree`(各自獨立 HEAD/index),別擠同一個工作目錄 —— 否則 commit/push 會互踩 ref。(踩過:HEAD 被對方 `checkout` 切走、改動變成別人 branch 的 uncommitted、push 推錯 ref。)
@@ -35,7 +35,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 1. **機密永不進 git**:`TELEGRAM_BOT_TOKEN`、`service_account.json`、`.env`(`.gitignore` 已擋)。有人提議 commit 立刻拒絕。
 2. **未經 Owner 明確同意,不 `git commit` / `git push` / 開 PR**。在 branch 做完、跑驗證、**先報告**,等 yes。
 3. **只改被要求的部分**,不順手改旁邊的 code/註解/欄位。
-4. **修 bug 前先想能不能用 schema / 設定 / 純函式 / 型別擋掉**,寫新 code 是最後手段。n8n 搬來的 regex 邏輯要 1:1 保留,別憑印象重寫跑掉行為。
+4. **修 bug 前先想能不能用 schema / 設定 / 純函式 / 型別擋掉**,寫新 code 是最後手段。抽取/清理/分群規則的 SSOT 在 `@pei760730/collector-core` —— 要改去 core 改(先過 core 的 tests + dedupConformance),別在本 repo 憑印象重寫跑掉行為。
 5. **不編造 Sheet 沒有的事實**;碰 Sheet 寫入只能 dry-run / `STORAGE=memory`,真寫(`STORAGE=sheets` 跑真表、`sync` 對接)要 Owner 明確同意,寫入後**獨立讀回確認**。
 6. **pipeline 全純函式**:parse / cleanUrl / detectPlatform / extractVideoId 無副作用、無網路;改邏輯先補 / 改 `tests/`。
 
@@ -61,11 +61,10 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 ```bash
 npm run typecheck     # tsc(含 tests),不可有型別錯
 npm test              # Vitest 全綠(pipeline 純函式 + collect/router/contract 整合)
-npm run build         # tsc 出 dist/index.js(Dockerfile CMD 依賴它)
+npm run build         # tsc 出 dist/index.js
 ```
 
 - 改 pipeline / schema / storage → 必補或改對應 `tests/`,跑 `npm test`。
-- 改 `Dockerfile` / `compose` → 確認 build context 正確、`dist/index.js` 出得來、機密走 volume/env 不烤進 image。
 - 碰 Sheet 寫入路徑只能 `STORAGE=memory` 乾跑;真表驗證用 `scripts/verify-sheet.ts` 讀回(API,不靠會亂碼的 terminal)。
 - 反向驗證:bot/CLI 自報成功不算數,寫入後獨立讀回確認(Windows terminal 對中文+並行會吐假成功)。
 

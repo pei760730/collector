@@ -40,6 +40,8 @@
 - **storage 只認 `Storage` 介面**:換來源新增實作即可,handlers 不動。
 - **最小權限**:Google 只用 `spreadsheets` scope。
 - **fail fast**:缺必要 env 啟動就丟錯,不帶半套設定跑。
+- **git tag dep bump 必驗 lock resolved**:bump `collector-core`(或任何 `github:…#tag` dep)時,改完 spec 必須重生/修正 lockfile,並確認 `package-lock.json` 該套件 `resolved` 的 commit sha == tag 指向的 sha(`gh api repos/pei760730/collector-core/git/ref/tags/<tag>`),PR body 附上該 sha。理由:`npm ci` 對 git dep 只驗 spec 字串不驗 resolved,spec 改了 lock 沒重生 → CI 綠著裝舊版。證據:PR #49 宣稱 bump v0.2.2,lock resolved 停在 v0.2.1 commit `95429dc`,生產跑舊版至 2026-07-04 體檢才發現(#51 直接升 v0.2.3 修復,並在 ci.yml 加「宣稱==實裝」守門,紅→綠反向驗證過)。日常由 ci.yml 守門步驟自動擋;此條供 bump 時主動照做,免得紅在 CI 才回頭修。失效條件:dep 改走 npm registry 發版(語意化版本 + integrity)後此條退役。
+- **改治理規則要兩檔一起**:CLAUDE.md 的紅線/部署線/職責變動,同 PR 必 grep AGENTS.md(反之亦然)同步或刪除對應副本。理由:兩檔各存規則副本,單邊更新必留殭屍。證據:2026-07-03 CLAUDE.md 退役「n8n 1:1」紅線、#50 刪 Docker 線,AGENTS.md 硬規則 4 與職責清單至 2026-07-04 仍是舊版,兩檔互相矛盾(#51 已同步清掉)。失效條件:若日後 AGENTS.md 改為「只引用 CLAUDE.md 不複述規則」則此條退役。
 
 ## 第四層:環境
 
