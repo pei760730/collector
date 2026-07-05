@@ -3,10 +3,12 @@
  */
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
 import type { RefRow } from "../types.js";
+import { dedupKey } from "../pipeline/index.js";
 import { computeStats } from "./computeStats.js";
 
 export class MemoryStorage implements Storage {
   private rows: RefRow[] = [];
+  private dedupCache?: Map<string, RefRow>;
 
   constructor(seed: RefRow[] = []) {
     this.rows = [...seed];
@@ -18,6 +20,8 @@ export class MemoryStorage implements Storage {
 
   async append(row: RefRow): Promise<void> {
     this.rows.push(row);
+    // 與 sheets 版一致:成功 append 後併入去重快取(若已建)。
+    this.dedupCache?.set(dedupKey(row.連結), row);
   }
 
   async readAll(): Promise<RefRow[]> {
@@ -26,6 +30,14 @@ export class MemoryStorage implements Storage {
 
   async readRows(): Promise<DuplicateHit[]> {
     return this.rows.map((row, i) => ({ row, rowNumber: i + 2 })); // +2:表頭 + 1-based
+  }
+
+  async dedupIndex(): Promise<Map<string, RefRow>> {
+    if (this.dedupCache) return this.dedupCache;
+    const index = new Map<string, RefRow>();
+    for (const r of this.rows) index.set(dedupKey(r.連結), r);
+    this.dedupCache = index;
+    return index;
   }
 
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {

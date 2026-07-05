@@ -4,7 +4,7 @@
  * 方便用 MemoryStorage 寫整合測試。Telegraf wiring 在 router.ts。
  */
 import { parseMessage, NoUrlError } from "@pei760730/collector-core";
-import { assembleDraft, dedupKey } from "../../pipeline/index.js";
+import { assembleDraft } from "../../pipeline/index.js";
 import { hasShortHost } from "@pei760730/collector-core";
 import type { Storage } from "../../storage/Storage.js";
 import { expandShortUrl } from "../../utils/expandUrl.js";
@@ -76,10 +76,12 @@ export async function runCollect(
   // 去重 + 寫入序列化,避免並發雙寫。去重靠連結即時推導的 key(全表比對、無時間窗,
   // 對齊 voc:參考池是永久池)。同連結(含同支影片不同形態)只收一次。
   return serialize(async () => {
-    const existing = await deps.storage.readRows();
-    const hit = existing.find((h) => dedupKey(h.row.連結) === draft.dedupKey);
+    // 去重查 in-memory 索引(單輪只讀一次全表建好、快取於 storage 實例),
+    // 不再每筆 readRows() 全表讀 —— 一輪 N 筆時 values.get 從 O(N) 降為 O(1)。
+    const index = await deps.storage.dedupIndex();
+    const hit = index.get(draft.dedupKey);
     if (hit) {
-      return { reply: duplicateMsg(hit.row) };
+      return { reply: duplicateMsg(hit) };
     }
 
     try {

@@ -35,6 +35,16 @@ export interface Storage {
   /** 讀全部資料列 + **正確實體列號**(去重比對用;空白列已跳過但列號正確)。 */
   readRows(): Promise<DuplicateHit[]>;
 
+  /**
+   * 去重索引:dedupKey → 既有那列。
+   *
+   * 單輪 drain 生命週期內**只讀一次全表**建索引、快取於 storage 實例;之後 collect 每筆
+   * 去重都查這份 in-memory Map(O(1)),不再每筆 `readRows()` 全表讀(N+1)。`append`
+   * 成功後把新列併入此快取,故同一輪稍後的重複連結也擋得到。常駐 polling 也共用同一份
+   * (單實例),行為一致;不重新整輪讀表(參考池只 append 不刪、且只有此 bot 寫入)。
+   */
+  dedupIndex(): Promise<Map<string, RefRow>>;
+
   /** 統計(供 /stats)。 */
   stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary>;
 }
