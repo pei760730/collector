@@ -1,0 +1,22 @@
+name: core-bump
+
+# collector-core 發新版後自動開 bump PR。邏輯單一實作在 core 的 consumer-bump.yml(reusable,三姊妹共用),
+# 本檔只是薄 caller。職責只到「發現新版 → surgical bump → 開 PR → dispatch CI → 通知」,merge 仍等 owner 授權。
+on:
+  schedule:
+    - cron: "17 22 * * *" # 台北 06:17;public repo cron 會節流漂移,日常有跑到即可
+  workflow_dispatch: # 手動觸發 = 立即檢查;選非 main ref 觸發 = 測試路徑(bump branch 從該 ref 切)
+
+permissions:
+  contents: write # push bump branch
+  pull-requests: write # 開 bump PR
+  actions: write # dispatch ci.yml(GITHUB_TOKEN 開的 PR 不自動觸發 pull_request)
+
+concurrency:
+  group: core-bump
+  cancel-in-progress: false # 會推 branch/開 PR,取消到一半留半套,寧可排隊
+
+jobs:
+  bump:
+    uses: pei760730/collector-core/.github/workflows/consumer-bump.yml@main
+    secrets: inherit
