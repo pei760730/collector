@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # core-bump 開的 PR 用 GITHUB_TOKEN,不會自動觸發 pull_request(GitHub 防遞迴);
+  # 由 core-bump dispatch 本 workflow 補跑,跑在同一 head sha,PR checks 照樣顯示。
+  workflow_dispatch:
 
 # 最小權限:CI 只讀 code 跑測試,不需要任何寫入。
 permissions:
