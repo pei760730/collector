@@ -115,12 +115,22 @@ describe("router 來源白名單(公開防護)", () => {
     expect(await storage.readAll()).toHaveLength(1);
   });
 
-  it("不在名單的陌生 chat/from → 丟棄、不寫入、不回覆", async () => {
+  it("不在名單的陌生 chat/from → 丟棄、不寫入,但回一句無權限提示", async () => {
     const storage = new MemoryStorage();
     const bot = makeBotWith(storage, [555]);
     await bot.handleUpdate(textFrom(424242, 717171, link));
     expect(await storage.readAll()).toHaveLength(0); // 沒寫進池
-    expect(sent).toHaveLength(0); // 連回覆都沒有 = 完全靜默丟棄
+    expect(sent).toEqual(["你沒有使用權限，請聯絡管理員"]); // 不再靜默:讓誤加的自己人知道去找管理員
+  });
+
+  it("同一個被擋 chat 連發多則 → 提示只回一次(防灌爆)", async () => {
+    const storage = new MemoryStorage();
+    const bot = makeBotWith(storage, [555]);
+    await bot.handleUpdate(textFrom(424242, 717171, link));
+    await bot.handleUpdate(textFrom(424242, 717171, `${link}2`));
+    await bot.handleUpdate(textFrom(424242, 717171, "/start"));
+    expect(await storage.readAll()).toHaveLength(0); // 全部沒寫進池
+    expect(sent).toHaveLength(1); // 提示只有第一則回,後續靜默丟棄
   });
 
   it("from.id 命中(私訊以外場景)也放行", async () => {

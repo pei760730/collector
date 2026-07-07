@@ -58,3 +58,7 @@ export function duplicateMsg(existing: RefRow): string {
 export function saveErrorMsg(detail: string): string {
   return ["❌ 寫入失敗,沒有存進參考池。", `原因:${detail}`].join("\n");
 }
+
+export function deniedMsg(): string {
+  return "你沒有使用權限，請聯絡管理員";
+}
