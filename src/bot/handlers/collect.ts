@@ -7,7 +7,7 @@ import { parseMessage, NoUrlError } from "@pei760730/collector-core";
 import { assembleDraft } from "../../pipeline/index.js";
 import { hasShortHost } from "@pei760730/collector-core";
 import type { Storage } from "../../storage/Storage.js";
-import { expandShortUrl } from "../../utils/expandUrl.js";
+import { expandShortUrl as coreExpandShortUrl } from "../../utils/expandUrl.js";
 import { logger } from "../../utils/logger.js";
 
 // 同進程序列化 dedup→append,避免同一連結極短時間連發時兩條都過去重再雙寫。
@@ -31,6 +31,8 @@ import {
 export interface CollectDeps {
   storage: Storage;
   expandShortUrls: boolean;
+  /** 短網址展開器。預設 = core expandShortUrl;測試注入 fake 即可驗 true 分支不打網路。 */
+  expandShortUrl?: (url: string) => Promise<string>;
   now?: () => number;
   /**
    * 寫入參考池失敗(可重試)時呼叫 —— 給 drain 模式用的 side-channel。
@@ -65,7 +67,8 @@ export async function runCollect(
   // 短網址展開(opt-in,且只對「已知短網址服務」展開,別對每條連結都發 HEAD
   // / 把正常連結跟著 redirect 跑到登入頁)。展開在 clean 之前,平台判斷吃真實網址。
   if (deps.expandShortUrls && hasShortHost(parsed.rawUrl)) {
-    const expanded = await expandShortUrl(parsed.rawUrl);
+    const expand = deps.expandShortUrl ?? coreExpandShortUrl;
+    const expanded = await expand(parsed.rawUrl);
     if (expanded !== parsed.rawUrl) {
       parsed = { ...parsed, rawUrl: expanded };
     }
