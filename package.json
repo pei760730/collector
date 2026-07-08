@@ -17,7 +17,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@pei760730/collector-core": "github:pei760730/collector-core#v0.2.4",
+    "@pei760730/collector-core": "github:pei760730/collector-core#v0.3.0",
     "dayjs": "^1.11.13",
     "dotenv": "^17.4.2",
     "googleapis": "^173.0.0",

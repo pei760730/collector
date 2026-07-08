@@ -3,7 +3,15 @@
  * 缺必要變數會在啟動時丟錯(fail fast),不要讓 bot 帶半套設定跑起來。
  */
 import dotenv from "dotenv";
-import { readFileSync } from "node:fs";
+import {
+  required,
+  optional,
+  boolEnv,
+  enumEnv,
+  chatIdsEnv,
+  loadGoogleCredentials,
+  type GoogleServiceAccountCredentials,
+} from "@pei760730/collector-core";
 
 // override:true —— .env 蓋過系統既有環境變數。
 // 原因:Windows 系統環境若殘留舊/打錯的 TELEGRAM_BOT_TOKEN,dotenv 預設不覆蓋會讓
@@ -11,52 +19,8 @@ import { readFileSync } from "node:fs";
 // quiet:true —— dotenv v17 預設會印 tip 行,靜音避免污染 CI 輸出。
 dotenv.config({ override: true, quiet: true });
 
-function required(name: string): string {
-  const v = process.env[name];
-  if (!v || v.trim() === "") {
-    throw new Error(`缺少必要環境變數:${name}(請參考 .env.example)`);
-  }
-  return v.trim();
-}
-
-function optional(name: string, fallback: string): string {
-  const v = process.env[name];
-  return v && v.trim() !== "" ? v.trim() : fallback;
-}
-
-function boolEnv(name: string, fallback: boolean): boolean {
-  const v = process.env[name];
-  if (v == null || v.trim() === "") return fallback;
-  return ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
-}
-
-/** 限定值環境變數;不在白名單直接丟錯。 */
-function enumEnv<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
-  const v = (process.env[name] ?? "").trim();
-  if (v === "") return fallback;
-  if (!(allowed as readonly string[]).includes(v)) {
-    throw new Error(`環境變數 ${name} 只能是 ${allowed.join(" / ")},收到:'${v}'`);
-  }
-  return v as T;
-}
-
-/**
- * 逗號分隔的 chat/user id 白名單(來源授權)。非整數項直接丟錯(fail-fast,
- * 別讓打錯的 id 默默失效後還「以為有保護」)。空字串 → 空陣列(是否強制由 loadConfig 決定)。
- */
-function chatIdsEnv(name: string): number[] {
-  const v = (process.env[name] ?? "").trim();
-  if (v === "") return [];
-  return v.split(",").map((s) => {
-    const t = s.trim();
-    // 先驗字面純數字:Number("1e5"/"0x10"/"12.0") 都會過 Number.isInteger,
-    // 讓打錯的 id 默默變成錯的數字(白名單靜默失準)。用 /^-?\d+$/ 擋掉。
-    if (!/^-?\d+$/.test(t)) {
-      throw new Error(`環境變數 ${name} 內含非整數 chat id:'${t}'(請用逗號分隔的純數字 id)`);
-    }
-    return Number(t);
-  });
-}
+// required / optional / boolEnv / enumEnv / chatIdsEnv / loadGoogleCredentials 已上移至
+// collector-core(v0.3.0);此處只保留 bot 專屬的 Config 型別與 loadConfig 組裝。
 
 export type StorageMode = "sheets" | "memory";
 
@@ -66,7 +30,7 @@ export interface Config {
   /** memory 乾跑模式下為 null(不需 Google 憑證)。 */
   google: {
     /** 解析後的 service account 憑證物件。 */
-    credentials: { client_email: string; private_key: string };
+    credentials: GoogleServiceAccountCredentials;
     sheetId: string;
     /** voc 的「參考池」分頁名(同一張表):收錄寫入的目標分頁。 */
     poolSheetName: string;
@@ -76,44 +40,6 @@ export interface Config {
   allowedChatIds: number[];
   expandShortUrls: boolean;
   logLevel: string;
-}
-
-/**
- * 取得 Google service account 憑證。優先序:
- * JSON 字串 > base64 > 檔案路徑。
- */
-function loadGoogleCredentials(): { client_email: string; private_key: string } {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
-  const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64?.trim();
-  const file = process.env.GOOGLE_SERVICE_ACCOUNT_FILE?.trim();
-
-  let jsonText: string | undefined;
-  if (raw) {
-    jsonText = raw;
-  } else if (b64) {
-    jsonText = Buffer.from(b64, "base64").toString("utf-8");
-  } else if (file) {
-    jsonText = readFileSync(file, "utf-8");
-  } else {
-    throw new Error(
-      "缺少 Google 憑證:請設 GOOGLE_SERVICE_ACCOUNT_JSON / _BASE64 / _FILE 其一",
-    );
-  }
-
-  let parsed: { client_email?: string; private_key?: string };
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    throw new Error("GOOGLE service account JSON 解析失敗(格式不是合法 JSON)");
-  }
-  if (!parsed.client_email || !parsed.private_key) {
-    throw new Error("service account JSON 缺 client_email / private_key");
-  }
-  return {
-    client_email: parsed.client_email,
-    // .env 內的 \n 換行還原
-    private_key: parsed.private_key.replace(/\\n/g, "\n"),
-  };
 }
 
 let cached: Config | null = null;

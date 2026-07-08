@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { GoogleSheetsStorage } from "../src/storage/googleSheets.js";
-import type { HeaderLayout } from "../src/storage/googleSheets.js";
+import type { HeaderLayout } from "@pei760730/collector-core";
 import type { RefRow } from "../src/types.js";
 
 const LAYOUT: HeaderLayout = { indexOf: { 平台: 0, 連結: 1, 挑: 2, 加入日期: 3 }, width: 4 };
