@@ -5,12 +5,7 @@
  * 故此統計反映「目前池中(還沒挑)」的素材,不含已挑/已拍。
  */
 import type { Storage } from "../../storage/Storage.js";
-import { PLATFORM_CODE, type Platform } from "../../types.js";
-import { PLATFORM_ICON } from "@pei760730/collector-core";
-
-const ICON_BY_CODE: Record<string, string> = Object.fromEntries(
-  (Object.keys(PLATFORM_CODE) as Platform[]).map((p) => [PLATFORM_CODE[p], PLATFORM_ICON[p]]),
-);
+import { ICON_BY_CODE } from "../../platformIcon.js";
 
 export interface StatsDeps {
   storage: Storage;
@@ -54,5 +49,6 @@ export async function runStats(deps: StatsDeps): Promise<string> {
   ].join("\n");
 
   // Telegram 單則上限 4096;保險再硬切
-  return out.length > 3900 ? out.slice(0, 3900) + "\n…(已截斷)" : out;
+  // 用 code point 切,避免 String.slice 把 emoji 的 surrogate pair 切一半吐出壞字。
+  return out.length > 3900 ? [...out].slice(0, 3900).join("") + "\n…(已截斷)" : out;
 }
