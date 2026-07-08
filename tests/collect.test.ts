@@ -179,4 +179,35 @@ describe("runCollect", () => {
     );
     expect(persistFailed).toBe(false);
   });
+
+  it("expandShortUrls: true + 注入 fake 展開器 → 展開後的網址才被清理/去重/寫入(不打網路)", async () => {
+    const storage = new MemoryStorage();
+    const short = "https://bit.ly/abc123";
+    const full = "https://www.tiktok.com/@u/video/7234567890";
+    let calledWith: string | undefined;
+    const fakeExpand = async (url: string) => {
+      calledWith = url;
+      return url === short ? full : url;
+    };
+    const r = await runCollect(
+      { text: `${short} 短鏈` },
+      { storage, expandShortUrls: true, expandShortUrl: fakeExpand },
+    );
+    expect(r.error).toBeUndefined();
+    expect(calledWith).toBe(short); // fake 被呼叫、真網路 HEAD 沒被打
+    const all = await storage.readAll();
+    expect(all).toHaveLength(1);
+    const row = all[0]!;
+    // 存進去的是「展開後」的真網址,平台由展開結果判定
+    expect(row.連結).toBe(full);
+    expect(row.平台).toBe("tiktok");
+
+    // 展開後與既有同支影片去重收斂成一筆(dedupKey 走展開網址)
+    const r2 = await runCollect(
+      { text: "https://www.tiktok.com/@other/video/7234567890 又貼" },
+      deps(storage),
+    );
+    expect(r2.reply).toContain("已經收過");
+    expect(await storage.readAll()).toHaveLength(1);
+  });
 });
