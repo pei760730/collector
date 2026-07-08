@@ -3,17 +3,8 @@
  * 改進#2:n8n 版用 MarkdownV2 但沒跳脫,含 . - ( ) 會發送失敗;
  * 純文字最穩,emoji 照常顯示,不必跳脫。
  */
-import { PLATFORM_CODE, type Platform, type RefRow } from "../types.js";
-import { PLATFORM_ICON } from "@pei760730/collector-core";
-
-/** 小寫平台碼 → emoji。row.平台 存的是碼(tiktok…),不是顯示名。 */
-const ICON_BY_CODE: Record<string, string> = Object.fromEntries(
-  (Object.keys(PLATFORM_CODE) as Platform[]).map((p) => [PLATFORM_CODE[p], PLATFORM_ICON[p]]),
-);
-
-function iconFor(code: string): string {
-  return ICON_BY_CODE[code] ?? "•";
-}
+import { type RefRow } from "../types.js";
+import { iconFor } from "../platformIcon.js";
 
 export function formatErrorMsg(): string {
   return [

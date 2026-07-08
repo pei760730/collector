@@ -49,11 +49,12 @@ function chatIdsEnv(name: string): number[] {
   if (v === "") return [];
   return v.split(",").map((s) => {
     const t = s.trim();
-    const n = Number(t);
-    if (!Number.isInteger(n)) {
+    // 先驗字面純數字:Number("1e5"/"0x10"/"12.0") 都會過 Number.isInteger,
+    // 讓打錯的 id 默默變成錯的數字(白名單靜默失準)。用 /^-?\d+$/ 擋掉。
+    if (!/^-?\d+$/.test(t)) {
       throw new Error(`環境變數 ${name} 內含非整數 chat id:'${t}'(請用逗號分隔的純數字 id)`);
     }
-    return n;
+    return Number(t);
   });
 }
 
