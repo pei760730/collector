@@ -9,7 +9,7 @@ function deps(storage: MemoryStorage) {
 }
 
 describe("runCollect", () => {
-  it("合法連結 → 寫入參考池(5 欄、平台小寫)+ 成功訊息", async () => {
+  it("合法連結 → 寫入參考池(4 欄、平台小寫)+ 成功訊息", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect(
       { text: "https://www.tiktok.com/@u/video/7234567890 好笑" },

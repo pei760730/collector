@@ -9,21 +9,14 @@
  */
 import { readFileSync } from "node:fs";
 import { google } from "googleapis";
+import { colLetter } from "@pei760730/collector-core";
 import { POOL_COLUMNS } from "../src/types.js";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID ?? "<SHEET_ID>";
 const POOL = "參考池";
 const expected = POOL_COLUMNS as string[];
 
-function colLetter(index: number): string {
-  let n = index;
-  let s = "";
-  do {
-    s = String.fromCharCode((n % 26) + 65) + s;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
-  return s;
-}
+// colLetter 已由 collector-core export(sheets/headerMap),不再手寫副本。
 const LAST_COL = colLetter(expected.length - 1);
 
 const sa = JSON.parse(readFileSync("./service_account.json", "utf-8")) as {

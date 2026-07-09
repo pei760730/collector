@@ -4,7 +4,7 @@
  * 純文字最穩,emoji 照常顯示,不必跳脫。
  */
 import { type RefRow } from "../types.js";
-import { iconFor } from "../platformIcon.js";
+import { iconFor, SUPPORTED_PLATFORMS } from "../platformIcon.js";
 
 export function formatErrorMsg(): string {
   return [
@@ -13,7 +13,7 @@ export function formatErrorMsg(): string {
     "請貼「短影音連結 + 備註」,例如:",
     "https://www.tiktok.com/@user/video/1234567890 健身梗很好笑",
     "",
-    "支援:TikTok / YouTube / Facebook / Instagram / Threads / X / 抖音 / 小紅書",
+    `支援:${SUPPORTED_PLATFORMS.join(" / ")}`,
   ].join("\n");
 }
 

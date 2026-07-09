@@ -5,7 +5,7 @@
  * 故此統計反映「目前池中(還沒挑)」的素材,不含已挑/已拍。
  */
 import type { Storage } from "../../storage/Storage.js";
-import { ICON_BY_CODE } from "../../platformIcon.js";
+import { iconFor } from "../../platformIcon.js";
 
 export interface StatsDeps {
   storage: Storage;
@@ -31,10 +31,8 @@ export async function runStats(deps: StatsDeps): Promise<string> {
   };
   const platformLines = capList(s.byPlatform);
 
-  const recentLines = s.recent.map((r) => {
-    const icon = ICON_BY_CODE[r.平台] ?? "•";
-    return `  ${icon} ${r.連結}（${r.加入日期}）`;
-  });
+  // iconFor 內建「認不得的碼 → •」fallback,不再手工重做 ICON_BY_CODE[...] ?? "•"。
+  const recentLines = s.recent.map((r) => `  ${iconFor(r.平台)} ${r.連結}（${r.加入日期}）`);
 
   const out = [
     `📊 參考池統計（共 ${s.total} 筆未挑）`,

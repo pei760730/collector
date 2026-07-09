@@ -39,14 +39,17 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
         return next();
       }
       // 丟棄但不報錯:drain 會照常 ack 推進 offset,避免垃圾訊息每輪重領卡住佇列。
-      logger.warn(`擋下非授權來源:chat=${chatId} from=${fromId}(不在 ALLOWED_CHAT_IDS)`);
+      // id 遮蔽:public repo 的 Actions log 是公開的,不外洩陌生人原始 Telegram id(去識別),
+      // 只留末 2 碼供粗略辨識重複來源。
+      logger.warn(`擋下非授權來源:chat=${maskId(chatId)} from=${maskId(fromId)}(不在 ALLOWED_CHAT_IDS)`);
       // 提示是 best-effort:reply 失敗(被封鎖等)不能拋出,否則這筆會被 drain 記成處理例外。
       // 回覆帶上發訊者自己的 id、並(若有設 errorChatId)一併通知管理員 → 被擋的自己人可自助上白名單。
+      // 提示走私訊/管理員 DM(非公開 log),故帶完整 id;公開 log 仍維持 maskId 去識別。
       if (chatId != null && !deniedNotified.has(chatId)) {
         deniedNotified.add(chatId);
         const denyId = fromId ?? chatId;
         await ctx.reply(deniedMsg(denyId)).catch((e) => {
-          logger.warn(`回覆非授權來源提示失敗:chat=${chatId}`, e);
+          logger.warn(`回覆非授權來源提示失敗:chat=${maskId(chatId)}`, e);
         });
         // 通知管理員(errorChatId 有設才發):把被擋 id + username 推給管理員,一鍵決定放不放行。
         if (config.errorChatId) {
@@ -56,7 +59,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
               config.errorChatId,
               `🔔 有人想用 bot 但不在白名單：id=${denyId}${uname}。放行就把這 id 加進 ALLOWED_CHAT_IDS。`,
             )
-            .catch((e) => logger.warn(`通知管理員被擋來源失敗:chat=${chatId}`, e));
+            .catch((e) => logger.warn(`通知管理員被擋來源失敗:chat=${maskId(chatId)}`, e));
         }
       }
     });
@@ -84,7 +87,9 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
   // /stats
   bot.command("stats", async (ctx) => {
     try {
-      await ctx.reply(await runStats({ storage }));
+      // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,不能讓它掉進下面的
+      // catch 對 error chat 發假的「/stats 失敗」(統計本身是成功的)。對齊 feed router 同款護法。
+      await ctx.reply(await runStats({ storage })).catch(() => {});
     } catch (err) {
       logger.error("/stats 失敗", err);
       await ctx.reply("❌ 取統計失敗。").catch(() => {});
@@ -137,4 +142,11 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** 遮蔽 Telegram id:回傳末 2 碼(不足 3 碼全遮),不外洩完整 id 到公開 log。 */
+function maskId(id: number | undefined): string {
+  if (id == null) return "none";
+  const s = String(Math.abs(id));
+  return s.length <= 2 ? "**" : `***${s.slice(-2)}`;
 }

@@ -141,7 +141,10 @@ export class GoogleSheetsStorage implements Storage {
     if (this.dedupCache) return this.dedupCache;
     const index = new Map<string, RefRow>();
     for (const h of await this.readRows()) {
-      index.set(dedupKey(h.row.連結), h.row);
+      const key = dedupKey(h.row.連結);
+      // 同 key 多列(歷史殘留/人工貼入)→ 保第一筆:duplicateMsg 顯示「首次加入」,
+      // 後列覆蓋會讓日期變成最後一筆、與文案矛盾。
+      if (!index.has(key)) index.set(key, h.row);
     }
     this.dedupCache = index;
     return index;

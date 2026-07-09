@@ -12,6 +12,11 @@ import {
   loadGoogleCredentials,
   type GoogleServiceAccountCredentials,
 } from "@pei760730/collector-core";
+import { logger } from "./utils/logger.js";
+
+// chatIdsEnv 對外 re-export:白名單嚴格解析是公開 repo 的防灌池閘門,
+// tests/config.test.ts 釘住 core 行為不漂移(與 clip-collector 同組守則,兩邊行為需一致)。
+export { chatIdsEnv };
 
 // override:true —— .env 蓋過系統既有環境變數。
 // 原因:Windows 系統環境若殘留舊/打錯的 TELEGRAM_BOT_TOKEN,dotenv 預設不覆蓋會讓
@@ -71,6 +76,11 @@ export function loadConfig(): Config {
     throw new Error(
       "STORAGE=sheets 但未設 ALLOWED_CHAT_IDS:正式寫表必須限定來源 chat id(逗號分隔純數字),否則公開後任何人都能灌你的參考池",
     );
+  }
+  // sheets 模式沒設 ERROR_CHAT_ID:notifyError 全程 no-op,寫入失敗只剩 Actions 紅燈
+  // (drain aborted → exit 2)可見。不 fail-fast(告警管道是選配),但開機明講,別默默沒告警。
+  if (storage === "sheets" && cached.errorChatId === "") {
+    logger.warn("ERROR_CHAT_ID 未設,寫入失敗將無 Telegram 告警(只剩 collect.yml 紅燈/exit code)");
   }
   return cached;
 }

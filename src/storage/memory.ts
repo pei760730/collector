@@ -35,7 +35,11 @@ export class MemoryStorage implements Storage {
   async dedupIndex(): Promise<Map<string, RefRow>> {
     if (this.dedupCache) return this.dedupCache;
     const index = new Map<string, RefRow>();
-    for (const r of this.rows) index.set(dedupKey(r.連結), r);
+    for (const r of this.rows) {
+      const key = dedupKey(r.連結);
+      // 與 sheets 版一致:同 key 多列保第一筆(duplicateMsg 顯示「首次加入」)。
+      if (!index.has(key)) index.set(key, r);
+    }
     this.dedupCache = index;
     return index;
   }
