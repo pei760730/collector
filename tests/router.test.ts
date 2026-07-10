@@ -128,7 +128,7 @@ describe("router 來源白名單(公開防護)", () => {
   it("errorChatId 有設 → 被擋時同時通知管理員(含被擋 id)", async () => {
     const storage = new MemoryStorage();
     const bot = createBot(
-      memoryConfig({ allowedChatIds: [555], errorChatId: "660156312" }),
+      memoryConfig({ allowedChatIds: [555], errorChatId: "999000999" }),
       storage,
     );
     bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
