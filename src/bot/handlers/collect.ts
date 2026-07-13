@@ -106,6 +106,7 @@ export async function runCollect(
         unsupported: draft.unsupported,
         isShortUrl: draft.isShortUrl,
         note: draft.note,
+        truncated: draft.truncated,
       }),
     };
   });
