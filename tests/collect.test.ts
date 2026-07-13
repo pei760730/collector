@@ -180,6 +180,29 @@ describe("runCollect", () => {
     expect(persistFailed).toBe(false);
   });
 
+  it("備註超長被 core 截斷 → 成功回覆帶截斷提醒(分享者知道存的不是完整值)", async () => {
+    const storage = new MemoryStorage();
+    const longNote = "x".repeat(2100); // > core MAX_NOTE_LEN(2000)
+    const r = await runCollect(
+      { text: `https://youtu.be/dQw4w9WgXcQ ${longNote}` },
+      deps(storage),
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.reply).toContain("已收進參考池"); // 照常收錄
+    expect(r.reply).toContain("已截斷"); // 但要明講截斷
+    expect(await storage.readAll()).toHaveLength(1);
+  });
+
+  it("正常長度訊息 → 回覆不帶截斷提醒", async () => {
+    const storage = new MemoryStorage();
+    const r = await runCollect(
+      { text: "https://youtu.be/dQw4w9WgXcQ 正常備註" },
+      deps(storage),
+    );
+    expect(r.reply).toContain("已收進參考池");
+    expect(r.reply).not.toContain("已截斷");
+  });
+
   it("expandShortUrls: true + 注入 fake 展開器 → 展開後的網址才被清理/去重/寫入(不打網路)", async () => {
     const storage = new MemoryStorage();
     const short = "https://bit.ly/abc123";

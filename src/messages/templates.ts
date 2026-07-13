@@ -19,7 +19,7 @@ export function formatErrorMsg(): string {
 
 export function successMsg(
   row: RefRow,
-  opts: { unsupported: boolean; isShortUrl: boolean; note?: string },
+  opts: { unsupported: boolean; isShortUrl: boolean; note?: string; truncated?: boolean },
 ): string {
   const lines = [
     `${iconFor(row.平台)} 已收進參考池`,
@@ -34,6 +34,10 @@ export function successMsg(
   }
   if (opts.isShortUrl) {
     lines.push("🔗 偵測到短網址,已標記。");
+  }
+  if (opts.truncated) {
+    // core 在解析邊界截斷超長連結/備註(fanout-safety)→ 明講,別讓分享者以為存的是完整值。
+    lines.push("⚠️ 連結或備註過長,已截斷收錄(存的不是完整值)。");
   }
   return lines.join("\n");
 }
