@@ -1,7 +1,7 @@
-# AGENTS.md — Codex CLI 行為規則(short-video-bot)
+# AGENTS.md — Codex CLI 行為規則(collector)
 
 > 這份是給 **Codex** 的。repo 的權威治理檔仍是 **`CLAUDE.md`**(永久紅線、資料地圖、技術不變式、§6 與 voc 對接契約)。Codex 動工前先讀 `CLAUDE.md`。
-> short-video-bot = Telegram 短影音收集 bot,取代舊 n8n 流程。貼「連結+備註」→ 解析→清網址→判平台→抽 video ID→去重→**直接寫 voc 的 Google Sheet「參考池」**。是 **voc 的上游**(2026-06-22 起直寫參考池,廢「暫存區→sync-pool」中間層)。
+> collector(原 short-video-bot,2026-07-15 改名;#9 三併一後為一殼多 target:voc / tbvoc)= Telegram 短影音收集 bot,取代舊 n8n 流程。貼「連結+備註」→ 解析→清網址→判平台→抽 video ID→去重→**直接寫 voc 的 Google Sheet「參考池」**。是 **voc 的上游**(2026-06-22 起直寫參考池,廢「暫存區→sync-pool」中間層)。
 
 ## 角色
 

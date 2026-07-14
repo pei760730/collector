@@ -1,5 +1,5 @@
 {
-  "name": "short-video-bot",
+  "name": "collector",
   "version": "0.1.0",
   "description": "Telegram 短影音收集 bot — 取代 n8n 版本(解析→清理→判斷平台→抽 video ID→去重→寫 Google Sheet)",
   "type": "module",
