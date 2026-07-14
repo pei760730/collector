@@ -45,6 +45,14 @@ jobs:
             sheet_secret: TBVOC_GOOGLE_SHEET_ID
             allowed_secret: TBVOC_ALLOWED_CHAT_IDS
             error_secret: TBVOC_ERROR_CHAT_ID
+          # of(自 feed-collector 併入,Phase 3):走 engines/of 獨立引擎(drain.ts 委派),
+          # secrets 用 OF_ 前綴,搬入前同樣優雅跳過。暫存區/總表分頁名用引擎內建預設。
+          - target: of
+            token_secret: OF_TELEGRAM_BOT_TOKEN
+            sa_secret: OF_GOOGLE_SERVICE_ACCOUNT_JSON
+            sheet_secret: OF_GOOGLE_SHEET_ID
+            allowed_secret: OF_ALLOWED_CHAT_IDS
+            error_secret: OF_ERROR_CHAT_ID
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

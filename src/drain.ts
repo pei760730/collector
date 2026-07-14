@@ -45,14 +45,22 @@ async function main(): Promise<number> {
   return runDrain(config, storage, target);
 }
 
-main()
-  // 顯式退出:避免 telegraf/gaxios 殘留 keep-alive handle 讓 Actions job 卡到 timeout。
-  // aborted → exit 2(非 0):舊版一律 exit 0 會讓 collect.yml 假綠、kai-notify(if: failure())
-  // 永不觸發 —— Sheets 壞掉 + ERROR_CHAT_ID 沒設時就是靜默丟資料。ERROR_CHAT_ID 告警
-  // 在 handleUpdate 內由 router notifyError await 送完才回來,main resolve 時已送出,
-  // 這裡 exit 不會截斷告警。
-  .then((code) => process.exit(code))
-  .catch((err) => {
-    logger.error("drain 失敗", err);
-    process.exit(1);
-  });
+// #9 三併一 Phase 3:of target 走 vendored feed 引擎(engines/of/,自帶 config/storage/router
+// 與自己的 drain entry,import 即執行、自行 process.exit)。feed 與 voc/tbvoc 是刻意不同的
+// scope(暫存區英文 5 欄、STATUS 狀態流、tt_/dy_ 前綴),不塞 TargetSpec —— 這裡是唯一接點,
+// voc/tbvoc 路徑一行不動。
+if ((process.env.COLLECTOR_TARGET ?? "voc") === "of") {
+  await import("./engines/of/drain.js");
+} else {
+  main()
+    // 顯式退出:避免 telegraf/gaxios 殘留 keep-alive handle 讓 Actions job 卡到 timeout。
+    // aborted → exit 2(非 0):舊版一律 exit 0 會讓 collect.yml 假綠、kai-notify(if: failure())
+    // 永不觸發 —— Sheets 壞掉 + ERROR_CHAT_ID 沒設時就是靜默丟資料。ERROR_CHAT_ID 告警
+    // 在 handleUpdate 內由 router notifyError await 送完才回來,main resolve 時已送出,
+    // 這裡 exit 不會截斷告警。
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      logger.error("drain 失敗", err);
+      process.exit(1);
+    });
+}
