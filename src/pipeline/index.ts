@@ -12,6 +12,7 @@ import {
 } from "@pei760730/collector-core";
 import type { ParsedMessage } from "@pei760730/collector-core";
 import type { RefRow } from "../types.js";
+import { VOC_TARGET, type TargetSpec } from "../targets.js";
 
 export { NoUrlError } from "@pei760730/collector-core";
 /** 去重 key = core groupKey(對齊 voc dedup_key,跨語言分群等價;名稱沿用 dedupKey 不動 importer)。 */
@@ -34,7 +35,12 @@ export interface Draft {
  * 從已解析訊息組草稿。collect handler 想在 parse 之後、組裝之前插入短網址展開時用這支
  * (把 parsed.rawUrl 換成展開後的網址)。
  */
-export function assembleDraft(parsed: ParsedMessage, now: () => number = Date.now): Draft {
+export function assembleDraft(
+  parsed: ParsedMessage,
+  now: () => number = Date.now,
+  // 預設 voc:既有呼叫端/測試零改動。生產由 collect handler 傳入 config 解析出的 target。
+  target: TargetSpec = VOC_TARGET,
+): Draft {
   const cleaned = cleanUrl(parsed.rawUrl);
   const platform = detectPlatform(cleaned.cleanUrl);
   // 只在「真的比對到網域」時抽 id,判斷 unsupported(給回覆提示)。fallback/error 一律 unsupported。
@@ -49,6 +55,9 @@ export function assembleDraft(parsed: ParsedMessage, now: () => number = Date.no
     挑: "", // 留空 = 還沒挑
     加入日期: todayIsoTaipei(now()),
   };
+  if (target.columns.includes("夯度")) {
+    row.夯度 = ""; // tbvoc 第 5 欄:收錄留空,分享者點 inline 按鈕後由 callback setHot 寫入
+  }
 
   return {
     row,

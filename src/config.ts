@@ -13,6 +13,7 @@ import {
   type GoogleServiceAccountCredentials,
 } from "@pei760730/collector-core";
 import { logger } from "./utils/logger.js";
+import type { TargetName } from "./targets.js";
 
 // chatIdsEnv 對外 re-export:白名單嚴格解析是公開 repo 的防灌池閘門,
 // tests/config.test.ts 釘住 core 行為不漂移(與 clip-collector 同組守則,兩邊行為需一致)。
@@ -30,6 +31,8 @@ dotenv.config({ override: true, quiet: true });
 export type StorageMode = "sheets" | "memory";
 
 export interface Config {
+  /** 寫入目標(#9 三併一:一殼多表)。env COLLECTOR_TARGET,預設 voc = 既有行為零變更。 */
+  target: TargetName;
   telegramToken: string;
   storage: StorageMode;
   /** memory 乾跑模式下為 null(不需 Google 憑證)。 */
@@ -62,6 +65,7 @@ export function loadConfig(): Config {
           poolSheetName: optional("POOL_SHEET_NAME", "參考池"),
         };
   cached = {
+    target: enumEnv("COLLECTOR_TARGET", ["voc", "tbvoc"] as const, "voc"),
     telegramToken: required("TELEGRAM_BOT_TOKEN"),
     storage,
     google,

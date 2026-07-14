@@ -24,6 +24,14 @@ export class MemoryStorage implements Storage {
     this.dedupCache?.set(dedupKey(row.連結), row);
   }
 
+  async setHot(key: string, hot: string): Promise<boolean> {
+    // 對齊 sheets 版語意:同 key 多列取第一筆(rows 順序即表序)。
+    const target = this.rows.find((r) => dedupKey(r.連結) === key);
+    if (!target) return false;
+    target.夯度 = hot;
+    return true;
+  }
+
   async readAll(): Promise<RefRow[]> {
     return [...this.rows];
   }

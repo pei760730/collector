@@ -7,6 +7,7 @@ import { parseMessage, NoUrlError } from "@pei760730/collector-core";
 import { assembleDraft } from "../../pipeline/index.js";
 import { hasShortHost } from "@pei760730/collector-core";
 import type { Storage } from "../../storage/Storage.js";
+import { VOC_TARGET, type TargetSpec } from "../../targets.js";
 import { expandShortUrl as coreExpandShortUrl } from "../../utils/expandUrl.js";
 import { logger } from "../../utils/logger.js";
 
@@ -21,16 +22,13 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   );
   return run;
 }
-import {
-  formatErrorMsg,
-  successMsg,
-  duplicateMsg,
-  saveErrorMsg,
-} from "../../messages/templates.js";
+import { formatErrorMsg, duplicateMsg, saveErrorMsg } from "../../messages/templates.js";
 
 export interface CollectDeps {
   storage: Storage;
   expandShortUrls: boolean;
+  /** 寫入目標(欄位/文案/夯度)。預設 voc:既有呼叫端與測試零改動;生產由 router 傳入。 */
+  target?: TargetSpec;
   /** 短網址展開器。預設 = core expandShortUrl;測試注入 fake 即可驗 true 分支不打網路。 */
   expandShortUrl?: (url: string) => Promise<string>;
   now?: () => number;
@@ -46,6 +44,11 @@ export interface CollectResult {
   reply: string;
   /** 有值 → 也要通知 error chat。 */
   error?: string;
+  /**
+   * (tbvoc)收錄成功或已收過時帶這支的 dedupKey,讓 router 掛「夯度」inline 按鈕;
+   * 點按鈕的 callback 用它定位該列回填夯度。voc target 恆不帶(無夯度功能)。
+   */
+  hotKey?: string;
 }
 
 export async function runCollect(
@@ -53,6 +56,7 @@ export async function runCollect(
   deps: CollectDeps,
 ): Promise<CollectResult> {
   const now = deps.now ?? Date.now;
+  const target = deps.target ?? VOC_TARGET;
 
   let parsed;
   try {
@@ -74,7 +78,7 @@ export async function runCollect(
     }
   }
 
-  const draft = assembleDraft(parsed, now);
+  const draft = assembleDraft(parsed, now, target);
 
   // 去重 + 寫入序列化,避免並發雙寫。去重靠連結即時推導的 key(全表比對、無時間窗,
   // 對齊 voc:參考池是永久池)。同連結(含同支影片不同形態)只收一次。
@@ -84,7 +88,10 @@ export async function runCollect(
     const index = await deps.storage.dedupIndex();
     const hit = index.get(draft.dedupKey);
     if (hit) {
-      return { reply: duplicateMsg(hit) };
+      // (tbvoc)已收過也讓他能(重)標夯度:帶同一支的 key。voc 不帶。
+      return target.hotValues
+        ? { reply: duplicateMsg(hit), hotKey: draft.dedupKey }
+        : { reply: duplicateMsg(hit) };
     }
 
     try {
@@ -101,13 +108,12 @@ export async function runCollect(
     }
 
     logger.info(`收錄 ${draft.row.平台} ${draft.row.連結}`);
-    return {
-      reply: successMsg(draft.row, {
-        unsupported: draft.unsupported,
-        isShortUrl: draft.isShortUrl,
-        note: draft.note,
-        truncated: draft.truncated,
-      }),
-    };
+    const reply = target.successMsg(draft.row, {
+      unsupported: draft.unsupported,
+      isShortUrl: draft.isShortUrl,
+      note: draft.note,
+      truncated: draft.truncated,
+    });
+    return target.hotValues ? { reply, hotKey: draft.dedupKey } : { reply };
   });
 }
