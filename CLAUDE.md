@@ -1,8 +1,9 @@
 # CLAUDE.md — collector 協作規則
 
-> 接手這個 repo(含 AI)先讀這份。collector(原 short-video-bot,2026-07-15 改名;#9 三併一後為一殼多 target:voc / tbvoc)= Telegram 短影音收集 bot,
+> 接手這個 repo(含 AI)先讀這份。collector(原 short-video-bot,2026-07-15 改名;#9 三併一後為一殼多 target:**voc / tbvoc / of**)= Telegram 短影音收集 bot,
 > 取代舊 n8n 流程。貼「連結+備註」→ 解析→清理→判平台→抽 video ID→去重→**直接寫 voc 的 Google Sheet「參考池」分頁**。
 > (2026-06-22:廢「暫存區」中間層 —— voc 已砍 sync-pool,bot 與 voc 同表同 SA,直寫參考池就是最終狀態。)
+> **of target 例外**:走 `src/engines/of/` vendored 獨立引擎(原 feed-collector,2026-07-15 併入,舊 repo archive)——暫存區英文 5 欄、STATUS 狀態流、tt_/dy_ 前綴,與 voc/tbvoc 刻意不同 scope(owner 拍板別硬拉 parity),**不在 TargetSpec 內**;`src/drain.ts` 依 `COLLECTOR_TARGET=of` 委派,本檔以下各層描述**只適用 voc/tbvoc 殼**,of 引擎的契約/不變式見 `src/engines/of/` 內檔頭註解與 `tests/of/`。上游 tbvoc 契約(原 clip-collector)同日併入:`src/targets.ts` + `contracts/tbvoc/` + `tests/contractTbvoc.test.ts`,SSoT 在 TeaBus-VOC repo。
 
 ## 第一層:永久紅線(違反就停)
 
