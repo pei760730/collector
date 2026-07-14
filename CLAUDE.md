@@ -1,6 +1,6 @@
-# CLAUDE.md — short-video-bot 協作規則
+# CLAUDE.md — collector 協作規則
 
-> 接手這個 repo(含 AI)先讀這份。short-video-bot = Telegram 短影音收集 bot,
+> 接手這個 repo(含 AI)先讀這份。collector(原 short-video-bot,2026-07-15 改名;#9 三併一後為一殼多 target:voc / tbvoc)= Telegram 短影音收集 bot,
 > 取代舊 n8n 流程。貼「連結+備註」→ 解析→清理→判平台→抽 video ID→去重→**直接寫 voc 的 Google Sheet「參考池」分頁**。
 > (2026-06-22:廢「暫存區」中間層 —— voc 已砍 sync-pool,bot 與 voc 同表同 SA,直寫參考池就是最終狀態。)
 
