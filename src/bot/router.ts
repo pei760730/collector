@@ -4,14 +4,32 @@
  * (/pick 已退役 2026-06-23:挑片統一走 Sheet 勾「挑」checkbox → GAS 搬待拍;
  *  /pick 靠 R 號定位,但 bot 直寫的列 id 留空、定位不到,且本來就要打字,單人作業多餘。)
  */
-import { Telegraf, type Context } from "telegraf";
+import { Telegraf, Markup, type Context } from "telegraf";
 import { message } from "telegraf/filters";
 import type { Config } from "../config.js";
 import type { Storage } from "../storage/Storage.js";
 import { runCollect } from "./handlers/collect.js";
 import { runStats } from "./handlers/stats.js";
 import { deniedMsg } from "../messages/templates.js";
+import { VOC_TARGET, type TargetSpec } from "../targets.js";
 import { logger } from "../utils/logger.js";
+
+// ── 夯度 inline 按鈕(tbvoc;自 clip-collector 移植,值域改由 target.hotValues 注入)─────
+// 收錄成功後在回覆下掛一排「夯爆了/NPC/拉完了」,分享者一鍵下標。
+// callback_data = h:<idx>:<dedupKey>;Telegram 上限 64 bytes,放不下(罕見長路徑
+// fallback key)就不掛按鈕(那種片直接在 Sheet 手標即可)。
+export function hotCbData(idx: number, key: string): string {
+  return `h:${idx}:${key}`;
+}
+export function hotKeyFits(key: string, values: readonly string[]): boolean {
+  return Buffer.byteLength(hotCbData(values.length - 1, key), "utf8") <= 64;
+}
+export function hotKeyboard(key: string, values: readonly string[], chosen = -1) {
+  const row = values.map((label, i) =>
+    Markup.button.callback(i === chosen ? `✅ ${label}` : label, hotCbData(i, key)),
+  );
+  return Markup.inlineKeyboard([row]); // 一排 3 顆,滿手機寬
+}
 
 /** drain 模式注入的鉤子;常駐版不傳(undefined)。 */
 export interface BotHooks {
@@ -19,7 +37,13 @@ export interface BotHooks {
   onPersistError?: () => void;
 }
 
-export function createBot(config: Config, storage: Storage, hooks?: BotHooks): Telegraf {
+export function createBot(
+  config: Config,
+  storage: Storage,
+  hooks?: BotHooks,
+  // 預設 voc:既有呼叫端/測試零改動。生產由 drain 依 config.target 傳入。
+  target: TargetSpec = VOC_TARGET,
+): Telegraf {
   const bot = new Telegraf(config.telegramToken);
 
   // 來源白名單(公開 repo 防護):只處理名單內 chat/user 的訊息,其餘丟棄(不寫池、不進 handler),
@@ -111,11 +135,18 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
           storage,
           expandShortUrls: config.expandShortUrls,
           onPersistError: hooks?.onPersistError,
+          target,
         },
       );
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,
       // 不能因此吞掉 notifyError(寫表結果才是重點)。對齊 /stats 的護法。
-      await ctx.reply(result.reply).catch(() => {});
+      // (tbvoc)收錄成功且 key 放得下 → 掛夯度按鈕,分享者一鍵下標;voc 恆不掛(kb=undefined)。
+      const hot = target.hotValues;
+      const kb =
+        hot && result.hotKey && hotKeyFits(result.hotKey, hot)
+          ? hotKeyboard(result.hotKey, hot)
+          : undefined;
+      await ctx.reply(result.reply, kb).catch(() => {});
       if (result.error) await notifyError(result.error);
     } catch (err) {
       logger.error("collect 例外", err);
@@ -131,6 +162,36 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
   // 只接 text 會讓這類訊息被靜默 ack 掉、不收錄也不回覆(漏資料)。caption 走 collect:
   // 有連結就收,沒連結則回「看不懂」提示,不再無聲丟失。
   bot.on(message("caption"), (ctx) => handleCollectText(ctx, ctx.message.caption ?? ""));
+
+  // 夯度按鈕點擊 → 回填該列「夯度」(tbvoc 專屬;voc target 無 hotValues 整段不註冊)。
+  // callback_data = h:<idx>:<dedupKey>(key 可能含 ":" 如 https://,故 (.+) 貪婪吃到尾;idx 在前不歧義)。
+  if (target.hotValues) {
+    const hotValues = target.hotValues;
+    bot.action(/^h:(\d+):(.+)$/, async (ctx) => {
+      try {
+        const idx = Number(ctx.match[1]);
+        const key = ctx.match[2];
+        const value = hotValues[idx];
+        if (key === undefined || value === undefined) {
+          await ctx.answerCbQuery("未知選項").catch(() => {});
+          return;
+        }
+        const ok = (await storage.setHot?.(key, value)) ?? false;
+        if (ok) {
+          await ctx.answerCbQuery(`夯度:${value} ✓`).catch(() => {});
+          // 在按鈕列把選中的標 ✅(視覺回饋,可再點換)。
+          await ctx.editMessageReplyMarkup(hotKeyboard(key, hotValues, idx).reply_markup).catch(() => {});
+        } else {
+          // 找不到 = 多半已勾「挑」搬去待拍了。
+          await ctx.answerCbQuery("這支已不在參考池(可能已挑走)").catch(() => {});
+        }
+      } catch (err) {
+        logger.error("夯度 callback 失敗", err);
+        await ctx.answerCbQuery("標記失敗").catch(() => {});
+        await notifyError(`夯度 callback 失敗:${errText(err)}`);
+      }
+    });
+  }
 
   // 全域兜底
   bot.catch((err, ctx) => {

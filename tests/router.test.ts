@@ -7,6 +7,7 @@ import type { Config } from "../src/config.js";
 
 function memoryConfig(overrides: Partial<Config> = {}): Config {
   return {
+    target: "voc",
     telegramToken: "TEST:TOKEN",
     storage: "memory",
     google: null, // memory 乾跑:pool=null,不碰真表

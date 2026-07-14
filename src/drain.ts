@@ -10,17 +10,21 @@
  *
  * 失敗語意:中途崩潰沒 ack → 下次 cron 重領,storage 去重(連結 key)擋掉重複。
  * at-least-once,寧可重複看得到也不要遺失(對齊 voc move_row 的同款取捨)。
+ *
+ * #9 三併一:這裡是「target 生產組裝點」(唯一一個)—— 依 COLLECTOR_TARGET(config.target,
+ * 預設 voc)取 TargetSpec,storage 吃該 target 的欄位/文案參數。編排本體在 drainRun.ts(可測)。
  */
-import { createBot } from "./bot/router.js";
 import { loadConfig } from "./config.js";
-import { drainUpdates, exitCodeFor, type DrainResult, type PersistFlag } from "./drainLoop.js";
+import { getTarget } from "./targets.js";
+import { runDrain } from "./drainRun.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { MemoryStorage } from "./storage/memory.js";
 import type { Storage } from "./storage/Storage.js";
 import { logger } from "./utils/logger.js";
 
-async function main(): Promise<DrainResult> {
+async function main(): Promise<number> {
   const config = loadConfig();
+  const target = getTarget(config.target);
   // DATE / 去重窗一律 Asia/Taipei(utils/date.ts 寫死),不靠 process.env.TZ。
 
   let storage: Storage;
@@ -33,31 +37,12 @@ async function main(): Promise<DrainResult> {
       credentials: config.google.credentials,
       sheetId: config.google.sheetId,
       sheetName: config.google.poolSheetName,
+      columns: target.columns,
+      owner: target.owner,
     });
   }
-  await storage.ensureHeader();
-
-  // persist.failed:某筆寫入參考池失敗(可重試)的 side-channel 旗標。每筆處理前歸零,
-  // handleUpdate 內若觸發 onPersistError 會翻 true → 該筆「沒持久化」,不能 ack。
-  const persist: PersistFlag = { failed: false };
-  const bot = createBot(config, storage, {
-    onPersistError: () => {
-      persist.failed = true;
-    },
-  });
-  // handleUpdate 要 botInfo 才能正確解析群組內的 /command@botname;先抓好(launch 平時會做)。
-  bot.botInfo = await bot.telegram.getMe();
-  // 確保沒有殘留 webhook(否則 getUpdates 回 409 Conflict);保留待領更新不丟。
-  await bot.telegram.deleteWebhook({ drop_pending_updates: false });
-
-  // 迴圈本體(getUpdates→handleUpdate→ack;abort 語意)抽到 drainLoop.ts,可注入假 bot 測試。
-  const result = await drainUpdates(bot, persist);
-
-  logger.info(
-    `drain ${result.aborted ? "中止(寫入失敗,部分未處理)" : "完成"}:已處理 ${result.processed} 筆更新`,
-  );
-  // 不 prune:參考池是 voc 永久池,bot 只 append 不刪列(prune 已隨暫存區一起退役)。
-  return result;
+  logger.info(`drain target=${target.name}`);
+  return runDrain(config, storage, target);
 }
 
 main()
@@ -66,7 +51,7 @@ main()
   // 永不觸發 —— Sheets 壞掉 + ERROR_CHAT_ID 沒設時就是靜默丟資料。ERROR_CHAT_ID 告警
   // 在 handleUpdate 內由 router notifyError await 送完才回來,main resolve 時已送出,
   // 這裡 exit 不會截斷告警。
-  .then((result) => process.exit(exitCodeFor(result)))
+  .then((code) => process.exit(code))
   .catch((err) => {
     logger.error("drain 失敗", err);
     process.exit(1);

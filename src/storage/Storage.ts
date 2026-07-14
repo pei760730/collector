@@ -29,6 +29,13 @@ export interface Storage {
   /** append 一列。 */
   append(row: RefRow): Promise<void>;
 
+  /**
+   * 把某連結(以 dedupKey 比對)那列的「夯度」欄設成 hot(tbvoc 專用;voc 殼不會呼叫)。
+   * 回傳 true=有對到並寫入;false=找不到(可能已挑走搬去待拍)。
+   * 選配:僅在 target 有 hotValues 時由 router callback 使用;兩個內建實作都有提供。
+   */
+  setHot?(dedupKey: string, hot: string): Promise<boolean>;
+
   /** 讀全部資料列(不含表頭)。 */
   readAll(): Promise<RefRow[]>;
 

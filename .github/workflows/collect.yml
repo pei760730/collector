@@ -3,6 +3,10 @@ name: collect
 # 定時把 Telegram 這段時間囤的訊息撈乾、解析、寫進「參考池」,然後結束。
 # 取代常駐機器:repo 是 public → Actions 免費額度無上限,$0。
 # Telegram 保留未領更新約 24h,只要間隔 < 24h 就不漏訊息。
+#
+# #9 三併一:同一條 workflow 以 matrix 跑多個 target(voc / tbvoc),每個 target
+# 是一隻獨立的 Telegram bot + 一張獨立的表;secrets 用 per-target 名稱間接注入
+# (matrix 只放 secret「名字」,值仍在 GitHub Secrets,不經 matrix 明文)。
 on:
   schedule:
     - cron: "*/5 * * * *" # 每 5 分(UTC,GitHub 排程下限);實際 GitHub 常拖到更久,非秒到。public Actions 免費無上限
@@ -12,7 +16,8 @@ on:
 permissions:
   contents: read
 
-# 同時只跑一個,避免兩個 job 並行領 getUpdates 互搶(會漏 ack)。
+# 同時只跑一個 run,避免同 target 兩個 job 並行領 getUpdates 互搶(會漏 ack)。
+# 同一個 run 內的兩個 matrix job 是不同 bot token,互不干擾、可並行。
 concurrency:
   group: collect
   cancel-in-progress: false
@@ -21,6 +26,25 @@ jobs:
   drain:
     runs-on: ubuntu-latest
     timeout-minutes: 10 # 保險:任何意外卡死 10 分鐘殺掉,別吃滿 6h 額度、堵住後續 cron
+    strategy:
+      fail-fast: false # 一個 target 紅不拖累另一個(兩隻 bot 獨立)
+      matrix:
+        include:
+          # voc(原 short-video-bot 本尊):secrets 沿用既有無前綴名,零搬遷。
+          - target: voc
+            token_secret: TELEGRAM_BOT_TOKEN
+            sa_secret: GOOGLE_SERVICE_ACCOUNT_JSON
+            sheet_secret: GOOGLE_SHEET_ID
+            allowed_secret: ALLOWED_CHAT_IDS
+            error_secret: ERROR_CHAT_ID
+          # tbvoc(自 clip-collector 併入):secrets 用 TBVOC_ 前綴,等 Kai 貼入前
+          # 這個 job 會優雅跳過(見 drain step 開頭的檢查),不紅燈不告警。
+          - target: tbvoc
+            token_secret: TBVOC_TELEGRAM_BOT_TOKEN
+            sa_secret: TBVOC_GOOGLE_SERVICE_ACCOUNT_JSON
+            sheet_secret: TBVOC_GOOGLE_SHEET_ID
+            allowed_secret: TBVOC_ALLOWED_CHAT_IDS
+            error_secret: TBVOC_ERROR_CHAT_ID
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -28,27 +52,33 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: drain
+      - name: drain (${{ matrix.target }})
         # 留存輸出供失敗通知擷取真因。
         # 顯式 `shell: bash` 讓 GitHub 用 `bash --noprofile --norc -eo pipefail` 跑;
         # 預設 shell 是 `bash -e {0}`(無 pipefail),drain 崩潰的退出碼會被 tee 吃掉
         # → job 假綠 → 下面 if: failure() 的告警永不觸發。這行為此而設,別刪。
         shell: bash
-        run: npm run drain 2>&1 | tee drain.log
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "::notice::target=${{ matrix.target }} 的 secrets 尚未設定(${{ matrix.token_secret }} 為空),優雅跳過。貼入 secrets 後自動生效。"
+            exit 0
+          fi
+          npm run drain 2>&1 | tee drain.log
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          COLLECTOR_TARGET: ${{ matrix.target }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets[matrix.token_secret] }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets[matrix.sa_secret] }}
+          GOOGLE_SHEET_ID: ${{ secrets[matrix.sheet_secret] }}
           STORAGE: sheets
           # 來源白名單:只收這些 chat/user id 的訊息(公開後防陌生人灌池)。
           # 必設 —— 沒設 sheets 模式會 fail-fast 直接紅燈(寧可不跑,也不要大開)。
-          ALLOWED_CHAT_IDS: ${{ secrets.ALLOWED_CHAT_IDS }}
+          ALLOWED_CHAT_IDS: ${{ secrets[matrix.allowed_secret] }}
           # cron 無人等候,展開 TikTok 等短連結→正規連結,讓短/長連結去重一致。
           # 展開失敗會優雅退回原值(不會更糟)。
           EXPAND_SHORT_URLS: "true"
           # 寫表失敗時的 Telegram 告警對象(從 secret 注入,別硬編任何人的 chat id)。
           # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
-          ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}
+          ERROR_CHAT_ID: ${{ secrets[matrix.error_secret] }}
 
       # 失敗才報:drain job 崩潰時抓 log 尾巴真因,收攏推到統一通知 bot(@MYNOOTIFYBot),走 kai-notify(fail-soft)。
       - name: Build failure message
@@ -57,7 +87,7 @@ jobs:
         run: |
           ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | tail -n 2 | tr '\n' ' ' | python3 -c 'import sys;sys.stdout.write(sys.stdin.buffer.read().decode("utf-8","replace")[:280])')
           [ -z "$ERR" ] && ERR="(未擷取到錯誤,請看 log)"
-          echo "text=🔴 short-video-bot collect 失敗:${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          echo "text=🔴 collector[${{ matrix.target }}] collect 失敗:${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
       - name: Notify Kai on failure (kai-notify)
         if: failure()
         uses: pei760730/kai-notify@v1

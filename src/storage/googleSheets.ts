@@ -23,6 +23,7 @@ import {
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
 import type { RefRow } from "../types.js";
 import { POOL_COLUMNS } from "../types.js";
+import type { TargetSpec } from "../targets.js";
 import { dedupKey } from "../pipeline/index.js";
 import { computeStats } from "./computeStats.js";
 
@@ -32,7 +33,17 @@ export interface GoogleSheetsOptions {
   credentials: { client_email: string; private_key: string };
   sheetId: string;
   sheetName: string;
+  /** 該 target 的表頭 SSOT。預設 voc 4 欄(既有呼叫端/測試零改動);生產由 drain 傳 target.columns。 */
+  columns?: readonly (keyof RefRow)[];
+  /** fail-fast 文案參數(見 TargetSpec.owner)。預設 voc。 */
+  owner?: TargetSpec["owner"];
 }
+
+// 表頭飄移防護 glue(colLetter / resolveHeaderIndexes / placeRow / readNamedRow / HeaderLayout)
+// 已抽進 collector-core(v0.3.0);本檔 re-export 供 tests/headerMap.test.ts 既有 import 面沿用
+// (自 clip-collector 移植)。
+export { colLetter, resolveHeaderIndexes, placeRow, readNamedRow };
+export type { HeaderLayout };
 
 // 表頭飄移防護 glue(colLetter / resolveHeaderIndexes / placeRow / readNamedRow + HeaderLayout)
 // 已上移至 collector-core(v0.3.0);bot 專屬欄位常數(POOL_COLUMNS)仍留 ../types.js。
@@ -46,10 +57,22 @@ export class GoogleSheetsStorage implements Storage {
   private readonly sheetName: string;
   private layoutCache?: HeaderLayout;
   private dedupCache?: Map<string, RefRow>;
+  private readonly columns: readonly (keyof RefRow)[];
+  private readonly owner: TargetSpec["owner"];
+  /**
+   * 「dedupKey→實體列號」快取 —— 每次全表讀(readRows)順手重建,setHot 命中即免整表 values.get
+   * (讀放大修正:舊版每按一次夯度按鈕就全表讀一次定位)。
+   * 過期窗:GAS pickScan_ 勾「挑」搬列會刪列,快取列號可能過期 → 寫錯列。這與舊版「讀完列號才
+   * update」本來就有的 read-then-write 窗同型,只是拉長到單輪生命週期;參考池單輪內
+   * pickScan_ 撞正在標夯度的列機率極低,接受(與 dedupCache 同壽命,單輪即棄)。
+   */
+  private rowByKey?: Map<string, number>;
 
   constructor(opts: GoogleSheetsOptions) {
     this.sheetId = opts.sheetId;
     this.sheetName = opts.sheetName;
+    this.columns = opts.columns ?? POOL_COLUMNS;
+    this.owner = opts.owner ?? { name: "voc", initCmd: "voc" };
     const auth = new google.auth.JWT({
       email: opts.credentials.client_email,
       key: opts.credentials.private_key,
@@ -74,7 +97,7 @@ export class GoogleSheetsStorage implements Storage {
     const titles = (meta.data.sheets ?? []).map((s) => s.properties?.title);
     if (titles.includes(this.sheetName)) return;
     throw new Error(
-      `找不到分頁「${this.sheetName}」。參考池由 voc 擁有,請先用 voc init-sheet 建表(bot 不自建 voc 的表)。`,
+      `找不到分頁「${this.sheetName}」。參考池由 ${this.owner.name} 擁有,請先用 ${this.owner.initCmd} init-sheet 建表(bot 不自建 ${this.owner.initCmd} 的表)。`,
     );
   }
 
@@ -91,7 +114,7 @@ export class GoogleSheetsStorage implements Storage {
         range: this.range("1:1"),
       }),
     );
-    this.layoutCache = resolveHeaderIndexes(res.data.values?.[0] ?? [], POOL_COLUMNS, "參考池");
+    this.layoutCache = resolveHeaderIndexes(res.data.values?.[0] ?? [], this.columns, "參考池");
     return this.layoutCache;
   }
 
@@ -121,16 +144,25 @@ export class GoogleSheetsStorage implements Storage {
   async readAll(): Promise<RefRow[]> {
     const layout = await this.layout();
     return (await this.rawRows(layout)).map(
-      (r) => readNamedRow(r.cells, POOL_COLUMNS, layout) as unknown as RefRow,
+      (r) => readNamedRow(r.cells, this.columns, layout) as unknown as RefRow,
     );
   }
 
   async readRows(): Promise<DuplicateHit[]> {
     const layout = await this.layout();
-    return (await this.rawRows(layout)).map((r) => ({
-      row: readNamedRow(r.cells, POOL_COLUMNS, layout) as unknown as RefRow,
+    const hits = (await this.rawRows(layout)).map((r) => ({
+      row: readNamedRow(r.cells, this.columns, layout) as unknown as RefRow,
       rowNumber: r.rowNumber,
     }));
+    // 每次全表讀都「整份重建」列號快取(不是併入):這是最新快照,直接取代最不會殘留過期列號。
+    // 同 key 多列保第一筆,對齊 dedupIndex 的語意(setHot 也取第一筆)。
+    const rowByKey = new Map<string, number>();
+    for (const h of hits) {
+      const k = dedupKey(h.row.連結);
+      if (k && !rowByKey.has(k)) rowByKey.set(k, h.rowNumber);
+    }
+    this.rowByKey = rowByKey;
+    return hits;
   }
 
   /**
@@ -176,7 +208,7 @@ export class GoogleSheetsStorage implements Storage {
           range: this.range(`A1:${colLetter(layout.width - 1)}`),
           valueInputOption: "RAW",
           insertDataOption: "INSERT_ROWS",
-          requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, POOL_COLUMNS, layout)] },
+          requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, this.columns, layout)] },
         }),
       {
         // 冪等護欄:呼叫端(collect)已先去重,故重試前若這連結 key 已在表上,
@@ -186,6 +218,46 @@ export class GoogleSheetsStorage implements Storage {
     );
     // 寫入成功 → 併入去重快取,讓同輪稍後的重複連結不必重讀全表也擋得到。
     if (key) this.dedupCache?.set(key, row);
+  }
+
+  async setHot(key: string, hot: string): Promise<boolean> {
+    const layout = await this.layout();
+    const hotIdx = layout.indexOf["夯度"]; // tbvoc columns 含夯度 → layout 必有(否則 layout() 早已 fail-fast)
+    if (hotIdx === undefined) return false;
+    // 讀放大修正:先查單輪內既有的列號快取(dedupIndex / append 護欄等任何 readRows 都會順手建),
+    // 命中就免掉一次全表 values.get;miss(本輪還沒全表讀過 / 該列是快取建好後才出現)才退回
+    // 全表讀重建快取再查一次。列號過期窗見 rowByKey 欄位註解(與舊版同型,接受)。
+    let rowNumber = this.rowByKey?.get(key);
+    if (rowNumber === undefined) {
+      await this.readRows(); // 重建 key→列號 快取
+      rowNumber = this.rowByKey?.get(key);
+    }
+    if (rowNumber === undefined) return false; // 已挑走 / 找不到
+    const a1 = `${colLetter(hotIdx)}${rowNumber}`;
+    await withRetry(
+      "setHot",
+      () =>
+        this.sheets.spreadsheets.values.update({
+          spreadsheetId: this.sheetId,
+          range: this.range(a1),
+          valueInputOption: "RAW",
+          requestBody: { values: [[hot]] },
+        }),
+      {
+        // 冪等護欄(append alreadyDone 同款):「寫成功但回應遺失」觸發重試時,先讀目標「單格」——
+        // 已是要寫的值就視為完成,不重打(重打雖是同格同值冪等,但列號在重試窗內可能因
+        // pickScan_ 刪列而過期,能不重打就不重打)。只讀 1 格、不做全表讀,與讀放大修正
+        // 一致;正常路徑(無重試)不多打任何讀。護欄查詢本身失敗由 withRetry 吞掉照常重試(降級)。
+        alreadyDone: async () => {
+          const res = await this.sheets.spreadsheets.values.get({
+            spreadsheetId: this.sheetId,
+            range: this.range(a1),
+          });
+          return String(res.data.values?.[0]?.[0] ?? "") === hot;
+        },
+      },
+    );
+    return true;
   }
 
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {
