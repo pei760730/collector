@@ -16,7 +16,8 @@ import { logger } from "./utils/logger.js";
 import type { TargetName } from "./targets.js";
 
 // chatIdsEnv 對外 re-export:白名單嚴格解析是公開 repo 的防灌池閘門,
-// tests/config.test.ts 釘住 core 行為不漂移(與 clip-collector 同組守則,兩邊行為需一致)。
+// tests/config.test.ts 釘住 core 行為不漂移(原與 clip-collector 的同組守則;#9 三併一後
+// 該 repo 已併入本 repo 並 archive,同步義務已內化,單邊守住即可)。
 export { chatIdsEnv };
 
 // override:true —— .env 蓋過系統既有環境變數。

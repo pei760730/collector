@@ -78,4 +78,4 @@ bot 是上游:**直接寫** Google 表「**短影音進度N**」(`<SHEET_ID>`,= 
   - **沒有 `voc pick` 指令**:搬移在 GAS(`pickScan_`),不是 Python CLI。別在文件/註解寫「voc pick」(會誤導)。
 - **平台偵測器兩套、各自獨立**:bot `detectPlatform`(hostname)與 voc `parse_url`(regex)是兩份實作。bot 是參考池唯一寫入者 → 平台欄以 bot 判定為準(voc 不再 re-derive)。`contract.test.ts` 釘住 bot 8 個平台碼都落在 voc 認得的小寫碼集合。
 - **改 voc 一律另開 voc session**,別從 bot 滑上游。
-- 驗證腳本:`npx tsx scripts/verify-sheet.ts`(列分頁 + 印參考池表頭)。(`read-refs.ts` 已砍 2026-07-03:sheet id 是佔位符跑不起來、驗的 sync-pool 已死。)
+- 驗證腳本:`npx tsx scripts/verify-sheet.ts`(列分頁 + 印參考池表頭)。⚠️ **voc 專用**(寫死 voc 4 欄+「參考池」+本機 `./service_account.json`);tbvoc/of 真表守門靠 drain 內建 `ensureHeader`。(`read-refs.ts` 已砍 2026-07-03:sheet id 是佔位符跑不起來、驗的 sync-pool 已死。)

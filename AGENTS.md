@@ -18,7 +18,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 **預設不碰(Claude Code / Owner 的領域):**
 - **Live bot 操作 / Sheet 實際寫入**(真的啟動 bot 收訊息、`STORAGE=sheets` 跑真表)
-- **與 voc 的對接契約**(`CLAUDE.md` §6 的參考池欄位:bot 直寫 voc `schema.REFS` 4 欄 `平台/連結/挑/加入日期`(`id` 已於 2026-06-24 砍))—— 改欄名要兩 repo 一起,屬跨 repo 協調
+- **跨 repo 對接契約,三份都是**:① voc 契約(`CLAUDE.md` §6:voc target 直寫 voc `schema.REFS` 4 欄);② tbvoc 契約(`contracts/tbvoc/` + `src/targets.ts` `TBVOC_COLUMNS`,SSoT 在私有 TeaBus-VOC repo,runbook 見其 CLAUDE.md 第六層);③ of 契約(`src/engines/of/types.ts` `STAGING_COLUMNS`,下游 = of-content-engine 的 GAS)—— 改欄名都要兩 repo 一起,屬跨 repo 協調
 - **schema 設計判斷**(`POOL_COLUMNS` 加/砍欄、平台規則、去重策略的大方向)
 - `service_account.json`、`.env`(機密)
 
@@ -65,7 +65,7 @@ npm run build         # tsc 出 dist/index.js
 ```
 
 - 改 pipeline / schema / storage → 必補或改對應 `tests/`,跑 `npm test`。
-- 碰 Sheet 寫入路徑只能 `STORAGE=memory` 乾跑;真表驗證用 `scripts/verify-sheet.ts` 讀回(API,不靠會亂碼的 terminal)。
+- 碰 Sheet 寫入路徑只能 `STORAGE=memory` 乾跑;真表驗證用 `scripts/verify-sheet.ts` 讀回(API,不靠會亂碼的 terminal)。⚠️ 此腳本 **voc 專用**(寫死 voc 4 欄+「參考池」+本機 `./service_account.json`);tbvoc/of 的真表守門靠 drain 內建 `ensureHeader`(寫入前對 live 表斷言)。
 - 反向驗證:bot/CLI 自報成功不算數,寫入後獨立讀回確認(Windows terminal 對中文+並行會吐假成功)。
 
 ## Codex 環境 quirks(踩過的雷)
