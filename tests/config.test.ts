@@ -3,7 +3,7 @@
  * 不能靠 Number() 把 "1e5"/"0x10"/"12.0" 這種寫法默默吞成「看起來合法」的錯 id
  * (白名單靜默失準,以為有保護其實開了)。用 /^-?\d+$/ 只認純十進位整數。
  * 嚴格 regex 原產於本 repo round-1 #58,後上移 collector-core(chatIdsEnv);
- * 本測釘住 core 行為不漂移,與 clip-collector tests/config.test.ts 同組守則、兩邊行為需一致。
+ * 本測釘住 core 行為不漂移(原與 clip-collector 同組守則;該 repo 已併入本 repo 並 archive,單邊守住即可)。
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { chatIdsEnv } from "../src/config.js";
