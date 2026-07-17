@@ -3,7 +3,7 @@
  * webhook 模式已於 2026-07-03 解散:生產是 cron drain、本機開發是 polling,webhook 從未上場。
  */
 import { loadConfig } from "./config.js";
-import { getTarget } from "./targets.js";
+import { getTarget, isOfTarget } from "./targets.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { MemoryStorage } from "./storage/memory.js";
 import type { Storage } from "./storage/Storage.js";
@@ -47,8 +47,9 @@ async function main(): Promise<void> {
   void bot.launch(() => logger.info(`bot 已啟動(long polling,target=${target.name})`));
 }
 
-// of target 的 dev polling 走 vendored 引擎自己的進入點(與 drain.ts 委派同款,唯一接點)。
-if ((process.env.COLLECTOR_TARGET ?? "voc").trim() === "of") {
+// of target 的 dev polling 走 vendored 引擎自己的進入點(與 drain.ts 委派同款,
+// 判定共用 targets.ts 的 isOfTarget —— trim+lowercase,別在這裡另寫 raw 比對)。
+if (isOfTarget()) {
   await import("./engines/of/index.js");
 } else {
   main().catch((err) => {
