@@ -6,6 +6,7 @@
  */
 import { Telegraf, Markup, type Context } from "telegraf";
 import { message } from "telegraf/filters";
+import { isTransient } from "@pei760730/collector-core";
 import type { Config } from "../config.js";
 import type { Storage } from "../storage/Storage.js";
 import { runCollect } from "./handlers/collect.js";
@@ -112,8 +113,9 @@ export function createBot(
   bot.command("stats", async (ctx) => {
     try {
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,不能讓它掉進下面的
-      // catch 對 error chat 發假的「/stats 失敗」(統計本身是成功的)。對齊 feed router 同款護法。
-      await ctx.reply(await runStats({ storage })).catch(() => {});
+      // catch 對 error chat 發假的「/stats 失敗」(統計本身是成功的);但也不全吞 ——
+      // 至少留 warn,發送壞掉才查得到。對齊 feed router 同款護法。
+      await ctx.reply(await runStats({ storage })).catch((e) => logger.warn("/stats 回覆發送失敗", e));
     } catch (err) {
       logger.error("/stats 失敗", err);
       await ctx.reply("❌ 取統計失敗。").catch(() => {});
@@ -187,6 +189,11 @@ export function createBot(
         }
       } catch (err) {
         logger.error("夯度 callback 失敗", err);
+        // setHot 是冪等單格寫(同格同值,重打不寫壞)→ 暫態錯誤(429/5xx/網路)翻 persist
+        // 旗標讓 drain 停在此 offset、下次 cron 重領這筆 callback 重試,夯度 tap 才不會因
+        // 一次暫態故障被 ack 掉永久丟失(舊版只 notifyError,update 照 ack)。
+        // 非暫態(權限/表結構等真錯)重領也沒用,維持原行為:通知後照常 ack。
+        if (isTransient(err)) hooks?.onPersistError?.();
         await ctx.answerCbQuery("標記失敗").catch(() => {});
         await notifyError(`夯度 callback 失敗:${errText(err)}`);
       }

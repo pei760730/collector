@@ -110,6 +110,32 @@ describe("append 冪等護欄:重試不放大全表讀", () => {
     expect(calls).toBe(1);
   });
 
+  it("alreadyDone 命中(拿不到 updatedRange)→ 不併去重快取(不塞 rowNumber=0 假列號)", async () => {
+    // 舊 bug(runtime audit LOW):alreadyDone 命中時 withRetry 回 undefined、無 updatedRange,
+    // 解析落 rowNumber=0 仍併進 videoIdCache → 假列號污染 DuplicateHit 契約(1-based)。
+    const { s, appendSpy } = makeStorage(async () => {
+      throw rateLimit();
+    });
+    // 第一次讀(建快取)= 空表;之後的讀(護欄 fresh 讀)= 該列已在表上(上次寫成功但回應遺失)。
+    const rawRowsSpy = spyRawRows(s)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ rowNumber: 2, cells: ROW_CELLS }]);
+
+    const cacheBefore = await s.videoIdIndex(); // 先建實例級去重快取(空)
+    expect(cacheBefore.size).toBe(0);
+
+    const advance = fakeTimers();
+    const p = s.append(ROW);
+    await advance();
+    await expect(p).resolves.toBeUndefined(); // alreadyDone 命中,視為完成
+    vi.useRealTimers();
+
+    expect(appendSpy).toHaveBeenCalledTimes(1);
+    const cacheAfter = await s.videoIdIndex(); // 同一份實例快取(不重讀)
+    expect(cacheAfter.get("tt_123")).toBeUndefined(); // 不併入假列號
+    expect(rawRowsSpy).toHaveBeenCalledTimes(2); // 建快取 1 次 + 護欄 fresh 讀 1 次
+  });
+
   it("降級保留:護欄查詢本身失敗 → 不快取失敗、照常重試(不因護欄掛了就放棄寫入)", async () => {
     let calls = 0;
     const { s, appendSpy } = makeStorage(async () => {

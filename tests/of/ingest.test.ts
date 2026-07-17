@@ -44,11 +44,55 @@ describe("runIngest — 核心流程", () => {
     expect(rows[0]!.VIDEO_ID).toBe("raw_1700000000000");
   });
 
-  it("unsupported 即使 VIDEO_ID 相同也不去重(各自存)", async () => {
+  it("unsupported 不做 VIDEO_ID 查重:同 raw_ id 但不同 CLEAN_URL → 各自存", async () => {
     const s = new MemoryStorage();
     await runIngest({ text: "https://example.com/a" }, deps(s));
     await runIngest({ text: "https://example.com/b" }, deps(s));
-    // 同一注入時間 → 同 raw_ id,但 unsupported 不查重 → 兩列
+    // 同一注入時間 → 同 raw_ id,但 unsupported 不查 VIDEO_ID → 兩列
+    expect(s.all()).toHaveLength(2);
+  });
+
+  // ── raw_ 列 abort 重領護欄(runtime audit MED:重領時 raw_<ts> 換新 timestamp,
+  //    append 的 VIDEO_ID 冪等護欄擋不住 → 靠「同日 + 同 CLEAN_URL + 既有列也是 raw_」擋)──
+  it("護欄:同日重領同 CLEAN_URL(raw_ 已在暫存區)→ 不雙寫,回已存在", async () => {
+    const s = new MemoryStorage();
+    const r1 = await runIngest({ text: "https://example.com/foo" }, deps(s));
+    expect(r1.reply).toContain("unsupported");
+    // 模擬 abort 後下次 cron 重領:同訊息、同日、但 now 已前進 → raw_ timestamp 不同
+    const later = () => FIXED() + 60_000;
+    const r2 = await runIngest(
+      { text: "https://example.com/foo" },
+      { storage: s, expandShortUrls: false, now: later },
+    );
+    expect(r2.reply).toContain("已經存在");
+    expect(s.all()).toHaveLength(1); // 沒有第二列
+  });
+
+  it("取捨釘住:跨日重貼同 CLEAN_URL → 仍留一列(「每貼必留一列」的跨日語意保留)", async () => {
+    const s = new MemoryStorage();
+    await runIngest({ text: "https://example.com/foo" }, deps(s));
+    const nextDay = () => FIXED() + 24 * 60 * 60 * 1000; // 隔天(台北)
+    const r2 = await runIngest(
+      { text: "https://example.com/foo" },
+      { storage: s, expandShortUrls: false, now: nextDay },
+    );
+    expect(r2.reply).toContain("unsupported"); // 照常收
+    expect(s.all()).toHaveLength(2); // 跨日那列帶新 DATE(「又被分享了」的訊號)
+  });
+
+  it("取捨釘住:既有同 CLEAN_URL 列「非 raw_ 前綴」→ 不擋 unsupported 新列(語意不同,留人工看)", async () => {
+    // 人工貼列/歷史抽取規則差異可能留下「同 CLEAN_URL 但可解析 id」的列;護欄限 raw_ 對 raw_。
+    const s = new MemoryStorage([
+      {
+        PLATFORM: "Other",
+        DATE: "2023/11/15", // = FIXED 的台北日期
+        CLEAN_URL: "https://example.com/foo",
+        VIDEO_ID: "tt_999",
+        STATUS: "pending_review",
+      },
+    ]);
+    const r = await runIngest({ text: "https://example.com/foo" }, deps(s));
+    expect(r.reply).toContain("unsupported");
     expect(s.all()).toHaveLength(2);
   });
 

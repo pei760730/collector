@@ -161,6 +161,44 @@ describe("router 夯度 callback(tbvoc)", () => {
     expect(mk?.inline_keyboard).toBeTruthy();
   });
 
+  it("(e) setHot 丟「暫態」錯誤 → 翻 onPersistError(drain 停在 offset、下次重領;setHot 冪等可重試)", async () => {
+    const storage = new MemoryStorage([seedRow(link)]);
+    const transient = new Error("rate limit") as Error & { code: number };
+    transient.code = 429;
+    vi.spyOn(storage, "setHot").mockRejectedValue(transient);
+    let persistFailed = false;
+    const bot = createBot(
+      memoryConfig(),
+      storage,
+      { onPersistError: () => (persistFailed = true) },
+      TBVOC_TARGET,
+    );
+    bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
+
+    await bot.handleUpdate(callbackUpdate(hotCbData(0, dedupKey(link))));
+
+    expect(persistFailed).toBe(true); // 夯度 tap 不因暫態故障被 ack 掉永久丟失
+    expect(cbAnswers.some((t) => t === "標記失敗")).toBe(true);
+  });
+
+  it("(e′) setHot 丟「非暫態」錯誤 → 不翻 onPersistError(重領也沒用,照常 ack)", async () => {
+    const storage = new MemoryStorage([seedRow(link)]);
+    vi.spyOn(storage, "setHot").mockRejectedValue(new Error("表結構壞了(非暫態)"));
+    let persistFailed = false;
+    const bot = createBot(
+      memoryConfig(),
+      storage,
+      { onPersistError: () => (persistFailed = true) },
+      TBVOC_TARGET,
+    );
+    bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
+
+    await bot.handleUpdate(callbackUpdate(hotCbData(0, dedupKey(link))));
+
+    expect(persistFailed).toBe(false);
+    expect(cbAnswers.some((t) => t === "標記失敗")).toBe(true);
+  });
+
   it("(voc 零變更鎖)voc target 收錄回覆不掛按鈕、不註冊 callback", async () => {
     const storage = new MemoryStorage();
     const bot = createBot(memoryConfig({ target: "voc" }), storage, undefined, VOC_TARGET);

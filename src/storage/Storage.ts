@@ -47,8 +47,12 @@ export interface Storage {
    *
    * 單輪 drain 生命週期內**只讀一次全表**建索引、快取於 storage 實例;之後 collect 每筆
    * 去重都查這份 in-memory Map(O(1)),不再每筆 `readRows()` 全表讀(N+1)。`append`
-   * 成功後把新列併入此快取,故同一輪稍後的重複連結也擋得到。常駐 polling 也共用同一份
-   * (單實例),行為一致;不重新整輪讀表(參考池只 append 不刪、且只有此 bot 寫入)。
+   * 成功後把新列併入此快取,故同一輪稍後的重複連結也擋得到。
+   *
+   * 快取永不失效的前提「參考池只有本 bot 寫入」**只在 cron 單輪成立**(drain 每輪新建實例、
+   * 輪末即棄,窗口分鐘級):tbvoc 實際有 GAS 勾「挑」搬待拍會刪列、也有人工直接貼列,
+   * 長駐進程的快取會與真表漂移(殘留已刪列、漏擋人工新列)。生產走 cron drain;
+   * 常駐 polling 僅供本機開發/memory 乾跑,勿對真表長跑。
    */
   dedupIndex(): Promise<Map<string, RefRow>>;
 

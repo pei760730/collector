@@ -296,10 +296,14 @@ export class GoogleSheetsStorage implements Storage {
       { alreadyDone: videoId ? async () => (await existingIds()).has(videoId) : undefined },
     )) as { data?: { updates?: { updatedRange?: string } } };
     // 寫入成功 → 併入去重快取,讓同輪稍後的重複 VIDEO_ID 不必重讀全表也擋得到。
+    // alreadyDone 命中(上次寫成功但回應遺失)時 withRetry 回 undefined、拿不到 updatedRange,
+    // 舊版解析落 rowNumber=0(假列號)仍併進快取 → 這裡改成「解析不到真實列號就不併」:
+    // 該筆已在表上,同輪稍後的重複會被 append 護欄的 fresh 讀再擋一次(不雙寫),
+    // 只是回覆從「已存在」變「已收錄」,可接受;不讓假列號污染 DuplicateHit 契約(1-based)。
     if (videoId && this.videoIdCache && !this.videoIdCache.has(videoId)) {
       const a1 = (res?.data?.updates?.updatedRange ?? "").split("!").pop() ?? "";
       const m = a1.match(/\d+/);
-      this.videoIdCache.set(videoId, { row, rowNumber: m ? Number(m[0]) : 0 });
+      if (m) this.videoIdCache.set(videoId, { row, rowNumber: Number(m[0]) });
     }
   }
 }

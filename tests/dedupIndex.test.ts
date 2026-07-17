@@ -41,6 +41,33 @@ describe("dedupIndex:同 key 多列保第一筆", () => {
     expect([...index.values()][0]!.加入日期).toBe("2025-01-01");
   });
 
+  it("GoogleSheetsStorage:空 key(連結空的壞列)不索引(對齊 of videoIdIndex「空 key 不去重」)", async () => {
+    const s = new GoogleSheetsStorage({
+      credentials: {
+        client_email: "x@y.iam.gserviceaccount.com",
+        private_key: "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
+      },
+      sheetId: "sid",
+      sheetName: "參考池",
+    });
+    const EMPTY_LINK: RefRow = { 平台: "unknown", 連結: "", 挑: "", 加入日期: "2026-07-01" };
+    vi.spyOn(s, "readRows").mockResolvedValue([
+      { row: EMPTY_LINK, rowNumber: 2 },
+      { row: FIRST, rowNumber: 3 },
+    ]);
+    const index = await s.dedupIndex();
+    expect(index.size).toBe(1); // 只有 FIRST;空 key 不進索引
+    expect(index.has("")).toBe(false);
+  });
+
+  it("MemoryStorage:空 key 同樣不索引(測試替身與 sheets 版行為一致)", async () => {
+    const EMPTY_LINK: RefRow = { 平台: "unknown", 連結: "", 挑: "", 加入日期: "2026-07-01" };
+    const storage = new MemoryStorage([EMPTY_LINK, FIRST]);
+    const index = await storage.dedupIndex();
+    expect(index.size).toBe(1);
+    expect(index.has("")).toBe(false);
+  });
+
   it("端到端:重貼同連結 → duplicateMsg 顯示的「首次加入」= 第一筆的日期", async () => {
     const storage = new MemoryStorage([FIRST, LATER]);
     const r = await runCollect({ text: `${URL} 又貼一次` }, { storage, expandShortUrls: false });

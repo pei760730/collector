@@ -69,7 +69,11 @@ describe("drainUpdates:abort / ack 語意", () => {
     expect(r.aborted).toBe(true);
     expect(r.processed).toBe(1); // 只有 10 成功
     expect(handled).toEqual([10, 11]); // 12 沒被處理(提前結束)
-    // 失敗筆(11)不前進 offset:offset 只推進到 11(10 成功後),之後不再領 → 11 起下次 cron 重領。
+    // 失敗筆(11)不前進 offset,且中止後不再發 getUpdates → 11 未被 ack(10 已被第二次
+    // getUpdates(offset=11) ack)。下次 cron 從 offset=0 起重領未確認段:與失敗筆「同批」的
+    // 已成功筆也會一併重領(本假件一批 1 筆,故只重領 11),由 storage 去重吸收(可解析列=
+    // VIDEO_ID 索引;raw_ 列=同日同 CLEAN_URL 護欄)、副作用 = 再回一次「已存在」——
+    // 不是「被下次 cron ack」。
     expect(offsetsSeen).toEqual([0, 11]);
   });
 

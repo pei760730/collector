@@ -20,8 +20,9 @@ export class MemoryStorage implements Storage {
 
   async append(row: RefRow): Promise<void> {
     this.rows.push(row);
-    // 與 sheets 版一致:成功 append 後併入去重快取(若已建)。
-    this.dedupCache?.set(dedupKey(row.連結), row);
+    // 與 sheets 版一致:成功 append 後併入去重快取(若已建);空 key 不併(空 key 不去重)。
+    const key = dedupKey(row.連結);
+    if (key) this.dedupCache?.set(key, row);
   }
 
   async setHot(key: string, hot: string): Promise<boolean> {
@@ -45,6 +46,7 @@ export class MemoryStorage implements Storage {
     const index = new Map<string, RefRow>();
     for (const r of this.rows) {
       const key = dedupKey(r.連結);
+      if (!key) continue; // 與 sheets 版一致:空 key 不索引(空 key 不去重)
       // 與 sheets 版一致:同 key 多列保第一筆(duplicateMsg 顯示「首次加入」)。
       if (!index.has(key)) index.set(key, r);
     }

@@ -45,11 +45,14 @@ export async function drainUpdates(bot: DrainableBot, persist: PersistFlag): Pro
         await bot.handleUpdate(u);
       } catch (err) {
         // 解析/路由層的非預期例外(非寫入失敗):這類重領也沒用,記錄後跳過。
-        logger.error(`處理 update ${u.update_id} 例外(跳過)`, err);
+        logger.error(`處理 update ${u.update_id} 例外(跳過,下次不重領)`, err);
       }
       if (persist.failed) {
-        // 寫入失敗(可重試):不前進 offset、結束整個 drain。前面成功的那段下次 cron 的
-        // 第一次 getUpdates(offset) 會 ack;這筆與之後的會被重領,靠 storage 連結 key 去重。
+        // 寫入失敗(可重試):不前進 offset、結束整個 drain,之後不再呼叫 getUpdates ——
+        // 本批的新 offset(含同批已成功筆推進的那段)從未回報給 Telegram,所以下次 cron
+        // 從 offset=0 起把「失敗批含同批已成功筆 + 之後全部」整段重領(更早的完整批次
+        // 已被本輪後續 getUpdates 帶新 offset ack 掉)。重領的已成功筆靠 storage 連結 key
+        // 去重吸收,副作用 = 分享者會再收到一次「已收過」回覆;失敗筆重新寫入。
         // 這樣才真正 at-least-once,不會把沒寫成功的訊息默默 ack 掉(CLAUDE.md 紅線)。
         logger.error(`update ${u.update_id} 寫入參考池失敗 → 停在此 offset,結束本輪讓下次 cron 重領`);
         aborted = true;

@@ -128,6 +128,29 @@ describe("drain 單輪去重不 N+1(暫存區/總表 values.get 皆 O(1))", () =
     expect(await readsForN(8)).toBe(1);
   });
 
+  it("raw_ 護欄:abort 重領(新實例、同日、新 timestamp)→ 不雙寫 unsupported 列", async () => {
+    // 情境(runtime audit MED):unsupported 列 VIDEO_ID=raw_<當下ts>,某輪 drain 寫入成功後
+    // 因後續筆失敗 abort → 整段未 ack,下次 cron(新 storage 實例)重領同訊息;此時 raw_ 帶
+    // 「新的」timestamp,append 的 VIDEO_ID 冪等護欄擋不住 → 舊版長出重複列。
+    const url = "https://example.com/some/page"; // 非支援平台 → raw_
+    const r1 = await runIngest(
+      { text: `${url} 第一輪` },
+      { storage: makeStorage(), expandShortUrls: false, now: FIXED },
+    );
+    expect(r1.reply).toContain("unsupported");
+    expect(calls.append).toBe(1);
+
+    // 下次 cron:全新 storage 實例(快取全空,靠讀回真表)、時間前進 5 分鐘(同一天)。
+    const nextCron = () => FIXED() + 5 * 60_000;
+    const r2 = await runIngest(
+      { text: `${url} 第一輪` },
+      { storage: makeStorage(), expandShortUrls: false, now: nextCron },
+    );
+    expect(r2.reply).toContain("已經存在"); // 護欄命中:同日 + 同 CLEAN_URL + 既有列 raw_
+    expect(calls.append).toBe(1); // 沒有第二列
+    expect(stagingRows).toHaveLength(1);
+  });
+
   it("同輪稍後重複連結 → 命中 in-memory 索引(含剛 append 的那筆)、不再 append、仍不多打資料讀", async () => {
     const storage = makeStorage();
     const url = "https://www.tiktok.com/@u/video/7234567890";

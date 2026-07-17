@@ -5,7 +5,7 @@
  * Telegraf wiring 在 router.ts。
  *
  *   parse → clean → extract(含 FB 轉址)→
- *     raw_*(unsupported) → 直接存(不查重)
+ *     raw_*(unsupported) → 同日已有同 CLEAN_URL 的 raw_ 列:跳過(abort 重領護欄)/ 否則直接存
  *     可解析       → 查重 → 重複:跳過不存 / 新的:pending_review 存
  */
 import {
@@ -102,7 +102,8 @@ export async function runIngest(
   };
 
   return serialize(async () => {
-    // unsupported(raw_*)→ 直接存,不查重(規格 §4.4)
+    // unsupported(raw_*)→ 原則直接存、不做 VIDEO_ID 查重(規格 §4.4「每貼必留一列」),
+    // 只擋下面的 abort 重領護欄。
     if (!ex.unsupported) {
       // 查 in-memory 去重索引 / 總表集合(單輪 drain 各只讀一次全表後快取,取代逐訊息全表掃描)。
       const hit = (await deps.storage.videoIdIndex()).get(ex.videoId.trim());
@@ -112,6 +113,27 @@ export async function runIngest(
       // approvedUrlSet 內值同樣過 core cleanUrl,兩側對齊。
       if ((await deps.storage.approvedUrlSet()).has(row.CLEAN_URL)) {
         return { reply: approvedDuplicateMsg(row.CLEAN_URL) };
+      }
+    } else {
+      // abort 重領護欄(2026-07-17 runtime audit MED:raw_ 列重領雙寫):raw_ 的 VIDEO_ID
+      // 帶「當下」timestamp,drain 中止後下次 cron 重領同一則訊息會產生新的 raw_<ts> →
+      // append 的 alreadyDone 護欄(以 VIDEO_ID 為鍵)擋不住,暫存區長出重複列。
+      // 這裡在寫入前對暫存區既有列做「CLEAN_URL 完全比對」,且雙重限定:
+      //   - 限既有列也是 raw_ 前綴:既有可解析列(tt_ 等)與 unsupported 新列語意不同,不互擋。
+      //   - 限同 DATE(同日):重領發生在下次 cron(分鐘級),幾乎必同日 → 擋得住;
+      //     跨日「主動重貼」仍留一列 —— 同日重複列五欄全同、零資訊,擋掉不虧;跨日那列
+      //     至少帶新 DATE(「又被分享了」的訊號),保住「每貼必留一列」的跨日語意。
+      //     代價:跨午夜的重領護欄失手 → 多一列重複給人工看(可見、可刪,比擋掉跨日重貼
+      //     的靜默丟失好)。
+      for (const hit of (await deps.storage.videoIdIndex()).values()) {
+        const existing = hit.row;
+        if (
+          existing.VIDEO_ID.startsWith("raw_") &&
+          existing.CLEAN_URL.trim() === row.CLEAN_URL &&
+          existing.DATE === row.DATE
+        ) {
+          return { reply: duplicateMsg(existing) };
+        }
       }
     }
 
