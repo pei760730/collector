@@ -16,15 +16,16 @@ on:
 permissions:
   contents: read
 
-# 同時只跑一個 run,避免同 target 兩個 job 並行領 getUpdates 互搶(會漏 ack)。
-# 同一個 run 內的兩個 matrix job 是不同 bot token,互不干擾、可並行。
-concurrency:
-  group: collect
-  cancel-in-progress: false
-
 jobs:
   drain:
+    name: drain ${{ matrix.target }}
     runs-on: ubuntu-latest
+    # 併發鎖下沉到 job 級、按 target 分組:同 target 跨 run 序列化(兩個 job 並行領
+    # getUpdates 會互搶、漏 ack),不同 target 是不同 bot token 互不干擾 —— 一個 target
+    # 卡住/排隊不再堵住其他 target 的下一輪 cron(舊 workflow 級 group: collect 會全鎖)。
+    concurrency:
+      group: collect-${{ matrix.target }}
+      cancel-in-progress: false
     timeout-minutes: 10 # 保險:任何意外卡死 10 分鐘殺掉,別吃滿 6h 額度、堵住後續 cron
     strategy:
       fail-fast: false # 一個 target 紅不拖累另一個(兩隻 bot 獨立)
@@ -37,8 +38,8 @@ jobs:
             sheet_secret: GOOGLE_SHEET_ID
             allowed_secret: ALLOWED_CHAT_IDS
             error_secret: ERROR_CHAT_ID
-          # tbvoc(自 clip-collector 併入):secrets 用 TBVOC_ 前綴,等 Kai 貼入前
-          # 這個 job 會優雅跳過(見 drain step 開頭的檢查),不紅燈不告警。
+          # tbvoc(自 clip-collector 併入):secrets 用 TBVOC_ 前綴(2026-07-14 已全貼齊)。
+          # 缺任一支 → 紅燈;五支全空才視為「未接線」跳過(見 drain step 開頭的守門)。
           - target: tbvoc
             token_secret: TBVOC_TELEGRAM_BOT_TOKEN
             sa_secret: TBVOC_GOOGLE_SERVICE_ACCOUNT_JSON
@@ -46,7 +47,7 @@ jobs:
             allowed_secret: TBVOC_ALLOWED_CHAT_IDS
             error_secret: TBVOC_ERROR_CHAT_ID
           # of(自 feed-collector 併入,Phase 3):走 engines/of 獨立引擎(drain.ts 委派),
-          # secrets 用 OF_ 前綴,搬入前同樣優雅跳過。暫存區/總表分頁名用引擎內建預設。
+          # secrets 用 OF_ 前綴(2026-07-14 已全貼齊,守門同上)。暫存區/總表分頁名用引擎內建預設。
           - target: of
             token_secret: OF_TELEGRAM_BOT_TOKEN
             sa_secret: OF_GOOGLE_SERVICE_ACCOUNT_JSON
@@ -67,9 +68,25 @@ jobs:
         # → job 假綠 → 下面 if: failure() 的告警永不觸發。這行為此而設,別刪。
         shell: bash
         run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-            echo "::notice::target=${{ matrix.target }} 的 secrets 尚未設定(${{ matrix.token_secret }} 為空),優雅跳過。貼入 secrets 後自動生效。"
+          # secrets 完整性守門:GitHub 對「沒設/名字打錯」的 secret 一律靜默給空字串,
+          # 舊版只看 token 空就優雅跳過 → 打錯名會遮住真故障(job 綠著、資料默默沒收)。
+          # 三組 secrets 已於 2026-07-14 全貼齊,所以語意改為:
+          #   五支全空  = target 尚未接線 → 跳過(明講,不紅燈);
+          #   部分有值  = 名字打錯或漏貼 → exit 1 列出缺哪支,讓紅燈被看見。
+          MISSING=""
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then MISSING="$MISSING ${{ matrix.token_secret }}"; fi
+          if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then MISSING="$MISSING ${{ matrix.sa_secret }}"; fi
+          if [ -z "$GOOGLE_SHEET_ID" ]; then MISSING="$MISSING ${{ matrix.sheet_secret }}"; fi
+          if [ -z "$ALLOWED_CHAT_IDS" ]; then MISSING="$MISSING ${{ matrix.allowed_secret }}"; fi
+          if [ -z "$ERROR_CHAT_ID" ]; then MISSING="$MISSING ${{ matrix.error_secret }}"; fi
+          N_MISSING=$(echo "$MISSING" | wc -w)
+          if [ "$N_MISSING" -eq 5 ]; then
+            echo "::notice::target=${{ matrix.target }} 未接線(五支 secrets 全空),跳過。要啟用請一次貼齊五支 secrets。"
             exit 0
+          fi
+          if [ "$N_MISSING" -gt 0 ]; then
+            echo "::error::target=${{ matrix.target }} secrets 不完整,缺:${MISSING# }(GitHub 對打錯名的 secret 靜默給空字串,請到 repo Settings→Secrets 核對名稱)"
+            exit 1
           fi
           npm run drain 2>&1 | tee drain.log
         env:
@@ -88,12 +105,25 @@ jobs:
           # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
           ERROR_CHAT_ID: ${{ secrets[matrix.error_secret] }}
 
+      # 收錄摘要:把 drain 收尾的「已處理 N 筆」行掛上 run 首頁(Step Summary),
+      # 巡檢不用點進 log。grep 無命中(target 跳過/守門擋下/drain 沒跑到收尾)不可紅
+      # → 接 || 給 fallback 行,step 永遠綠。
+      - name: Step summary (${{ matrix.target }})
+        if: always()
+        run: |
+          {
+            echo "### drain ${{ matrix.target }}"
+            grep '已處理' drain.log 2>/dev/null || echo "(無「已處理」行:target 跳過、secrets 守門擋下,或 drain 未跑到收尾)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # 失敗才報:drain job 崩潰時抓 log 尾巴真因,收攏推到統一通知 bot(@MYNOOTIFYBot),走 kai-notify(fail-soft)。
       - name: Build failure message
         if: failure()
         id: failmsg
         run: |
-          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | tail -n 2 | tr '\n' ' ' | python3 -c 'import sys;sys.stdout.write(sys.stdin.buffer.read().decode("utf-8","replace")[:280])')
+          # grep -v 先剔除已知的 WARN 誤導行:「ERROR_CHAT_ID 未設」是開機提示(含 ERROR/失敗
+          # 字樣會被下面的真因擷取撈到),不是本次失敗的原因,別讓它頂掉真錯誤進通知。
+          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | grep -v 'ERROR_CHAT_ID 未設' | tail -n 2 | tr '\n' ' ' | python3 -c 'import sys;sys.stdout.write(sys.stdin.buffer.read().decode("utf-8","replace")[:280])')
           [ -z "$ERR" ] && ERR="(未擷取到錯誤,請看 log)"
           echo "text=🔴 collector[${{ matrix.target }}] collect 失敗:${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
       - name: Notify Kai on failure (kai-notify)

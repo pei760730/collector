@@ -42,3 +42,14 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # main push 紅燈才報(PR 紅燈在 PR 頁自己會看到,不吵):收攏推到統一通知 bot
+      # (@MYNOOTIFYBot),走 kai-notify(fail-soft),用法對齊 collect.yml。
+      # on.push 只掛 main,event_name == 'push' 即等價「main push」。
+      - name: Notify Kai on failure (kai-notify)
+        if: failure() && github.event_name == 'push'
+        uses: pei760730/kai-notify@v1
+        env:
+          KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
+          KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
+        with:
+          text: "🔴 collector CI 紅燈(main push):${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
