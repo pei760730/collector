@@ -94,3 +94,15 @@ const TARGETS: Record<TargetName, TargetSpec> = { voc: VOC_TARGET, tbvoc: TBVOC_
 export function getTarget(name: TargetName): TargetSpec {
   return TARGETS[name];
 }
+
+/**
+ * of 委派判定(#9 Phase 3)—— drain.ts 與 index.ts 兩個 entry 共用的唯一判定點。
+ * of 走 src/engines/of vendored 引擎、刻意不在 TargetSpec 內,所以判定吃 raw env,
+ * 不能走 enumEnv(那條只認 voc/tbvoc)。正規化 trim + lowercase:殼內 enumEnv(core)
+ * 容忍前後空白,委派判定若比 raw 值,"of "(尾空白)/"OF"(大寫)不委派、落殼後
+ * enumEnv 丟「只能是 voc/tbvoc」誤導排查。原本兩個 entry 各自 inline 比對(一邊修
+ * trim 另一邊漏掉的前科,#72),抽成 helper 斷根。
+ */
+export function isOfTarget(env: string | undefined = process.env.COLLECTOR_TARGET): boolean {
+  return (env ?? "voc").trim().toLowerCase() === "of";
+}

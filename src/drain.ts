@@ -15,7 +15,7 @@
  * 預設 voc)取 TargetSpec,storage 吃該 target 的欄位/文案參數。編排本體在 drainRun.ts(可測)。
  */
 import { loadConfig } from "./config.js";
-import { getTarget } from "./targets.js";
+import { getTarget, isOfTarget } from "./targets.js";
 import { runDrain } from "./drainRun.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { MemoryStorage } from "./storage/memory.js";
@@ -49,9 +49,8 @@ async function main(): Promise<number> {
 // 與自己的 drain entry,import 即執行、自行 process.exit)。feed 與 voc/tbvoc 是刻意不同的
 // scope(暫存區英文 5 欄、STATUS 狀態流、tt_/dy_ 前綴),不塞 TargetSpec —— 這裡是唯一接點,
 // voc/tbvoc 路徑一行不動。
-if ((process.env.COLLECTOR_TARGET ?? "voc").trim() === "of") {
-  // trim:此分支比對 raw env,殼內 enumEnv(core)容忍前後空白;不 trim 的話
-  // "of "(尾空白)不委派、落殼後 enumEnv 丟「只能是 voc/tbvoc」誤導排查。
+// 判定共用 targets.ts 的 isOfTarget(trim+lowercase,與 index.ts 同一支;理由見該函式檔頭)。
+if (isOfTarget()) {
   await import("./engines/of/drain.js");
 } else {
   main()

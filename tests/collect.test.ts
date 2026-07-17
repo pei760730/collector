@@ -233,4 +233,32 @@ describe("runCollect", () => {
     expect(r2.reply).toContain("已經收過");
     expect(await storage.readAll()).toHaveLength(1);
   });
+
+  it("expandShortUrls: false → 不展開(spy 展開器不被呼叫,短鏈原樣進 pipeline)", async () => {
+    const storage = new MemoryStorage();
+    let called = false;
+    const spyExpand = async (url: string) => {
+      called = true;
+      return url;
+    };
+    await runCollect(
+      { text: "https://bit.ly/abc123 短鏈" },
+      { storage, expandShortUrls: false, expandShortUrl: spyExpand },
+    );
+    // gate 關閉 → 展開器根本不該被呼叫(三併一前 clip-collector 有的分支測試,回填)
+    expect(called).toBe(false);
+    expect(await storage.readAll()).toHaveLength(1); // 短鏈原樣收錄
+  });
+
+  it("連結超長(> core MAX_URL_LEN 2048)被截斷 → 照常收錄且回覆帶截斷提醒", async () => {
+    const storage = new MemoryStorage();
+    // 影片 id 在前、垃圾 query 疊到超過 2048:截斷發生在尾巴,平台/id 判定不受影響
+    const longUrl = `https://youtu.be/dQw4w9WgXcQ?x=${"a".repeat(2100)}`;
+    const r = await runCollect({ text: `${longUrl} 備註` }, deps(storage));
+    expect(r.error).toBeUndefined();
+    expect(r.reply).toContain("已收進參考池"); // 照常收錄
+    expect(r.reply).toContain("已截斷"); // 但要明講截斷(分享者知道存的不是完整值)
+    const row = (await storage.readAll())[0]!;
+    expect(row.平台).toBe("youtube");
+  });
 });

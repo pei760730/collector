@@ -9,7 +9,7 @@
  * 直接測 chatIdsEnv(不經 loadConfig):避開 dotenv override 與 loadConfig 快取干擾,
  * 用專屬 env key 現設現讀。
  */
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 
 import { chatIdsEnv } from "../../src/engines/of/config.js";
 
@@ -54,5 +54,58 @@ describe("chatIdsEnv — 只收純十進位整數字面", () => {
 
   it("一項壞的就整批 fail-fast(不默默丟掉壞項)", () => {
     expect(() => parse("123, 1e5, 456")).toThrow(/非整數 chat id/);
+  });
+});
+
+// ── ERROR_CHAT_ID 開機告警(與殼版 tests/config.test.ts 同款,of 引擎自己的 loadConfig)──
+// loadConfig 有模組級快取 + import 時跑 dotenv({override:true}) → vi.resetModules()
+// 取全新實例、env 在 import 之後設。logger 是 core 單例(re-export),spyOn warn 即可。
+const CONFIG_ENV_KEYS = [
+  "STORAGE",
+  "TELEGRAM_BOT_TOKEN",
+  "GOOGLE_SERVICE_ACCOUNT_JSON",
+  "GOOGLE_SERVICE_ACCOUNT_JSON_BASE64",
+  "GOOGLE_SERVICE_ACCOUNT_FILE",
+  "GOOGLE_SHEET_ID",
+  "ALLOWED_CHAT_IDS",
+  "ERROR_CHAT_ID",
+] as const;
+
+async function loadFreshSheetsConfig(errorChatId?: string) {
+  vi.resetModules();
+  const { loadConfig } = await import("../../src/engines/of/config.js");
+  const { logger } = await import("../../src/engines/of/utils/logger.js");
+  process.env.STORAGE = "sheets";
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  // 假憑證:loadGoogleCredentials 只驗 client_email/private_key 存在,不打網路
+  process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+    client_email: "test@test.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\\nfake\\n-----END PRIVATE KEY-----",
+  });
+  delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64;
+  delete process.env.GOOGLE_SERVICE_ACCOUNT_FILE;
+  process.env.GOOGLE_SHEET_ID = "test-sheet-id";
+  process.env.ALLOWED_CHAT_IDS = "123456"; // 假 id,真實管理員 chat id 不進 public repo
+  if (errorChatId === undefined) delete process.env.ERROR_CHAT_ID;
+  else process.env.ERROR_CHAT_ID = errorChatId;
+  const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+  loadConfig();
+  return warn;
+}
+
+describe("loadConfig — ERROR_CHAT_ID 開機告警", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const k of CONFIG_ENV_KEYS) delete process.env[k];
+  });
+
+  it("sheets 模式未設 ERROR_CHAT_ID → logger.warn 明講(寫入失敗將無 Telegram 告警)", async () => {
+    const warn = await loadFreshSheetsConfig(undefined);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("ERROR_CHAT_ID 未設"));
+  });
+
+  it("sheets 模式已設 ERROR_CHAT_ID → 不 warn", async () => {
+    const warn = await loadFreshSheetsConfig("123456"); // 假 id
+    expect(warn).not.toHaveBeenCalled();
   });
 });
