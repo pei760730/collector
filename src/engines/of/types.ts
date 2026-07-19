@@ -2,6 +2,13 @@
  * 共用型別 + Google Sheet「暫存區」schema(SSOT)。
  * 改欄位只改這裡;storage / messages / handlers 都引用這份。
  *
+ * ⚠️ 跨 repo 契約(改 STAGING_COLUMNS / STATUS 值 / 平台清單前先讀):
+ *   此 schema 被下游 of-content-engine 的 `tests/fixtures/gas_contract.json` 手動鏡像、
+ *   由 `tests/test_gas_contract.py` 守門(GAS 消化端讀「暫存區」搬「總表」)。改任一欄名 /
+ *   STATUS 值 / 平台 → 必須同步那份 fixture,否則本 repo 綠、下游 GAS 靜默漂移。
+ *   (WORKER_RUN 教訓:producer 單邊改欄、consumer 手動鏡像沒跟 = 收集鏈斷,見 CLAUDE.md 頂部。)
+ *
+
  * 與姊妹專案 short-video-bot 的差異:
  * - 5 欄(不含 SENDER / NOTE / AGE / icon);worker 退役後不再帶下游專用欄。
  * - STATUS 只有 pending_review / unsupported(可解析待選 / 無法解析待人工看)。

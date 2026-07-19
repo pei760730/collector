@@ -21,7 +21,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
 
   // 來源白名單(公開 repo 防護):只處理名單內 chat/user 的訊息,其餘丟棄(不寫暫存區、不進 handler),
   // 但回一句「沒有權限」提示 —— 完全靜默會讓誤加的自己人以為 bot 壞了
-  // (2026-07-07:short-video-bot 兩位協作者連 /start 都沒回應,查了一天才發現是被白名單擋下)。
+  // (2026-07-07:兩位協作者連 /start 都沒回應,查了一天才發現是被白名單擋下)。
   // 同一 chat 每次進程只提醒一次(drain=每輪一次),陌生人連發也不會被回覆灌爆。
   // 放在所有 handler 之前 → polling 與 drain(handleUpdate)兩條路都涵蓋。
   // 比對 chat.id(私訊=你的 user id;群組=群 id)或 from.id(發訊者),命中其一即放行。
@@ -54,7 +54,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
           await ctx.telegram
             .sendMessage(
               config.errorChatId,
-              `🔔 有人想用 bot 但不在白名單:id=${denyId}${uname}。放行就把這 id 加進 ALLOWED_CHAT_IDS。`,
+              `🔔 有人想用 bot 但不在白名單：id=${denyId}${uname}。放行就把這 id 加進 ALLOWED_CHAT_IDS。`,
             )
             .catch((e) => logger.warn(`通知管理員被擋來源失敗:chat=${maskId(chatId)}`, e));
         }

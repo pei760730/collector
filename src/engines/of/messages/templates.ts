@@ -66,6 +66,6 @@ export function saveErrorMsg(detail: string): string {
 export function deniedMsg(id?: number): string {
   // 帶上發訊者自己的 id → 被擋的自己人截圖給管理員,管理員直接把這串加進白名單即可,
   // 免得像 2026-07-07 那樣要翻 Actions log 才撈得到 id。id 不明(理論上不會)時退回原句。
-  const base = "你沒有使用權限,請聯絡管理員";
-  return id == null ? base : `${base}。\n你的 ID:${id}(把這串傳給管理員加進白名單即可)`;
+  const base = "你沒有使用權限，請聯絡管理員";
+  return id == null ? base : `${base}。\n你的 ID：${id}（把這串傳給管理員加進白名單即可）`;
 }
