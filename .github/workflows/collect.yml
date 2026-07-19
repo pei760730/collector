@@ -102,7 +102,7 @@ jobs:
           # 展開失敗會優雅退回原值(不會更糟)。
           EXPAND_SHORT_URLS: "true"
           # 寫表失敗時的 Telegram 告警對象(從 secret 注入,別硬編任何人的 chat id)。
-          # 沒設的話 notifyError 會 no-op,cron 默默壞掉收不到通知。
+          # 是上方守門的五支之一:部分缺漏(含只缺此支)→ exit 1 紅燈,不會走到「默默 no-op」。
           ERROR_CHAT_ID: ${{ secrets[matrix.error_secret] }}
 
       # 收錄摘要:把 drain 收尾的「已處理 N 筆」行掛上 run 首頁(Step Summary),

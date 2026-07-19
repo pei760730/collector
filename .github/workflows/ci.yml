@@ -28,7 +28,7 @@ jobs:
       - run: npm ci
       # 守門:package.json 宣稱的 collector-core tag 必須 == 實際安裝版本。
       # npm ci 對 git dep 只驗 spec 字串不驗 lock resolved(PR #49 曾綠著裝舊版)。
-      # 三支 collector 共用同一段。core 的 exports 沒開放 ./package.json 子路徑,
+      # 此守門段原三支 collector 各持一份,#9 併一後只存於本 repo。core 的 exports 沒開放 ./package.json 子路徑,
       # 要走 ./node_modules/ 檔案路徑直讀(裸 require 會 ERR_PACKAGE_PATH_NOT_EXPORTED)。
       - run: |
           node -e "

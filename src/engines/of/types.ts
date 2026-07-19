@@ -9,7 +9,7 @@
  *   (WORKER_RUN 教訓:producer 單邊改欄、consumer 手動鏡像沒跟 = 收集鏈斷,見 CLAUDE.md 頂部。)
  *
 
- * 與姊妹專案 short-video-bot 的差異:
+ * 與本 repo 的 voc/tbvoc 殼(原 short-video-bot;#9 併一後為 collector 的 target)的差異:
  * - 5 欄(不含 SENDER / NOTE / AGE / icon);worker 退役後不再帶下游專用欄。
  * - STATUS 只有 pending_review / unsupported(可解析待選 / 無法解析待人工看)。
  * - 平台前綴 tt_/dy_ 等(非 core 的 tiktok_/douyin_;對照表在 pipeline/extractVideoId.ts),抓不到為 raw_<ts>。

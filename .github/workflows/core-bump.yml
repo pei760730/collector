@@ -1,6 +1,6 @@
 name: core-bump
 
-# collector-core 發新版後自動開 bump PR。邏輯單一實作在 core 的 consumer-bump.yml(reusable,三姊妹共用),
+# collector-core 發新版後自動開 bump PR。邏輯單一實作在 core 的 consumer-bump.yml(reusable;原三 collector 共用,#9 併一後只剩本 repo 一支 caller),
 # 本檔只是薄 caller。職責只到「發現新版 → surgical bump → 開 PR → dispatch CI → 通知」,merge 仍等 owner 授權。
 on:
   schedule:
