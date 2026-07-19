@@ -1,9 +1,7 @@
 /**
- * drain abort 語意 + exit code 對映(audit HIGH: drain-abort-exit-0-假綠):
- * 舊版 aborted(寫入失敗中止)也 exit 0 → collect.yml 綠燈、kai-notify(if: failure())
- * 永不觸發;Sheets 壞掉 + ERROR_CHAT_ID 沒設 = 靜默丟資料。
- * 本測釘住:aborted → exitCodeFor = 2(非 0),正常 → 0;
- * 以及迴圈的 ack 語意 —— 失敗筆不前進 offset(下次 cron 重領)、成功段照常 ack。
+ * shell/of 共用 drain 的 at-least-once 紅線：
+ * offset 只在成功處理後前進；persist 失敗停在當前 offset、不 ack、回 aborted；
+ * aborted 對映 exit 2，正常對映 exit 0。
  */
 import { describe, it, expect } from "vitest";
 import type { Update } from "@telegraf/types";
@@ -12,16 +10,15 @@ import {
   exitCodeFor,
   type DrainableBot,
   type PersistFlag,
-} from "../src/drainLoop.js";
+} from "../../src/shared/drainLoop.js";
 
 function upd(id: number): Update {
   return { update_id: id } as Update;
 }
 
 /**
- * 假 bot:getUpdates 依 offset 回「還沒 ack 的更新」(模擬 Telegram 累積語意;
- * 一次只回 1 筆,逼迴圈每筆都帶新 offset 重新領 → offset 前進/停住的語意才驗得到),
- * handleUpdate 時對指定 update_id 翻 persist.failed(模擬寫入參考池失敗)。
+ * 假 bot:getUpdates 依 offset 回「還沒 ack 的更新」(模擬 Telegram 累積語意；
+ * 一次只回 1 筆，逼迴圈每筆都帶新 offset 重新領)。
  */
 function makeFakeBot(opts: {
   updates: Update[];
@@ -48,28 +45,29 @@ function makeFakeBot(opts: {
 }
 
 describe("drainUpdates:abort / ack 語意", () => {
-  it("全部成功 → processed=全數、aborted=false", async () => {
+  it("全部成功 → offset 逐筆推進、processed=全數、aborted=false", async () => {
     const persist: PersistFlag = { failed: false };
-    const { bot } = makeFakeBot({ updates: [upd(10), upd(11), upd(12)], persist });
-    const r = await drainUpdates(bot, persist);
-    expect(r).toEqual({ processed: 3, aborted: false });
+    const { bot, offsetsSeen } = makeFakeBot({
+      updates: [upd(10), upd(11), upd(12)],
+      persist,
+    });
+    const result = await drainUpdates(bot, persist, "測試目的地");
+    expect(result).toEqual({ processed: 3, aborted: false });
+    expect(offsetsSeen).toEqual([0, 11, 12, 13]);
   });
 
-  it("中途某筆寫入失敗 → aborted=true、失敗筆與之後的不 ack(下次重領)", async () => {
+  it("中途某筆 persist 失敗 → 停在該 offset、不 ack、回 aborted", async () => {
     const persist: PersistFlag = { failed: false };
     const { bot, offsetsSeen, handled } = makeFakeBot({
       updates: [upd(10), upd(11), upd(12)],
       failOn: new Set([11]),
       persist,
     });
-    const r = await drainUpdates(bot, persist);
-    expect(r.aborted).toBe(true);
-    expect(r.processed).toBe(1); // 只有 10 成功
+    const result = await drainUpdates(bot, persist, "測試目的地");
+    expect(result.aborted).toBe(true);
+    expect(result.processed).toBe(1); // 只有 10 成功
     expect(handled).toEqual([10, 11]); // 12 沒被處理(提前結束)
-    // 失敗筆(11)不前進 offset,且中止後不再發 getUpdates → 11 未被 ack(10 已被第二次
-    // getUpdates(offset=11) ack)。下次 cron 從 offset=0 起重領未確認段:與失敗筆「同批」的
-    // 已成功筆也會一併重領(本假件一批 1 筆,故只重領 11),由 storage 去重吸收、副作用 =
-    // 再回一次「已收過」—— 不是「被下次 cron ack」。
+    // 失敗筆 11 不前進 offset；中止後不再呼叫 getUpdates，所以 11 未被 ack。
     expect(offsetsSeen).toEqual([0, 11]);
   });
 
@@ -80,10 +78,30 @@ describe("drainUpdates:abort / ack 語意", () => {
       throwOn: new Set([10]),
       persist,
     });
-    const r = await drainUpdates(bot, persist);
-    expect(r.aborted).toBe(false);
-    expect(r.processed).toBe(2); // 例外筆也算處理(ack 掉,重領也沒用)
+    const result = await drainUpdates(bot, persist, "測試目的地");
+    expect(result.aborted).toBe(false);
+    expect(result.processed).toBe(2); // 例外筆也算處理(ack 掉,重領也沒用)
     expect(handled).toEqual([10, 11]);
+  });
+
+  it("每次呼叫各自持有 offset/result 狀態，不受前一輪 aborted 串味", async () => {
+    const persist: PersistFlag = { failed: false };
+    const first = makeFakeBot({
+      updates: [upd(20)],
+      failOn: new Set([20]),
+      persist,
+    });
+    expect(await drainUpdates(first.bot, persist, "測試目的地")).toEqual({
+      processed: 0,
+      aborted: true,
+    });
+
+    const second = makeFakeBot({ updates: [upd(30)], persist });
+    expect(await drainUpdates(second.bot, persist, "測試目的地")).toEqual({
+      processed: 1,
+      aborted: false,
+    });
+    expect(second.offsetsSeen).toEqual([0, 31]);
   });
 });
 
