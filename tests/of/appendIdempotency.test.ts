@@ -1,16 +1,5 @@
-/**
- * append 冪等護欄(alreadyDone)讀放大防護:
- * 非冪等寫入(values.append)在「寫成功但回應遺失」時會觸發重試,withRetry 重試前先問
- * alreadyDone「上次其實成功了嗎?」(feed 以 VIDEO_ID 為穩定鍵)。舊版每次重試都對既有
- * VIDEO_ID 集合做一次全表讀(rawRows),故障時(連環 429 / 暫態網路錯)讀放大成 N 次。
- *
- * 修法:在單次 append 的重試窗內,護欄查詢「成功」就快取結果只讀一次;查詢「本身失敗」不快取,
- * 照常重試(降級保留)。本測釘住三態:成功快取只讀一次 / 查到已存在提早收手 / 失敗不快取。
- *
- * 註:護欄讀的是「當下 fresh 全表」(freshVideoIds→rawRows),不是實例級去重快取 videoIdCache
- * (那是凍結快照,偵測不到「上次寫成功但回應遺失」)。此處 videoIdCache 未建 → append 尾端併入為 no-op。
- */
-import { describe, it, expect, vi } from "vitest";
+/** of 專屬：alreadyDone 沒有 updatedRange 時，不得把 rowNumber=0 假列號併進 videoIdCache。 */
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { GoogleSheetsStorage } from "../../src/engines/of/storage/googleSheets.js";
 import type { HeaderLayout } from "@pei760730/collector-core";
 import type { StagingRow } from "../../src/engines/of/types.js";
@@ -70,46 +59,12 @@ function rateLimit(): Error & { code: number } {
   return e;
 }
 
-describe("append 冪等護欄:重試不放大全表讀", () => {
-  it("護欄查詢成功 → 整個 append 重試窗內 rawRows 至多讀一次(不隨重試 N 倍放大)", async () => {
-    let calls = 0;
-    const { s } = makeStorage(async () => {
-      calls += 1;
-      if (calls < 3) throw rateLimit();
-      return { data: {} };
-    });
-    // 護欄查的既有 VIDEO_ID 集合「不含」本片 → alreadyDone 回 false,append 照常重試到成功。
-    const rawRowsSpy = spyRawRows(s).mockResolvedValue([]);
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
-    const advance = fakeTimers();
-    const p = s.append(ROW);
-    await advance();
-    await p;
-    vi.useRealTimers();
-
-    expect(rawRowsSpy).toHaveBeenCalledTimes(1); // 快取於重試窗,非每次重試各讀一次
-  });
-
-  it("護欄查到本 VIDEO_ID 已存在 → 視為已完成,提早收手不再重打 append", async () => {
-    let calls = 0;
-    const { s, appendSpy } = makeStorage(async () => {
-      calls += 1;
-      throw rateLimit();
-    });
-    // 護欄回報:這片已在表上(上次寫成功但回應遺失)。
-    const rawRowsSpy = spyRawRows(s).mockResolvedValue([{ rowNumber: 2, cells: ROW_CELLS }]);
-
-    const advance = fakeTimers();
-    const p = s.append(ROW);
-    await advance();
-    await expect(p).resolves.toBeUndefined();
-    vi.useRealTimers();
-
-    expect(appendSpy).toHaveBeenCalledTimes(1); // 第一次失敗 → 護欄查到已存在 → 不再重試
-    expect(rawRowsSpy).toHaveBeenCalledTimes(1);
-    expect(calls).toBe(1);
-  });
-
+describe("of append 成功後快取", () => {
   it("alreadyDone 命中(拿不到 updatedRange)→ 不併去重快取(不塞 rowNumber=0 假列號)", async () => {
     // 舊 bug(runtime audit LOW):alreadyDone 命中時 withRetry 回 undefined、無 updatedRange,
     // 解析落 rowNumber=0 仍併進 videoIdCache → 假列號污染 DuplicateHit 契約(1-based)。
@@ -136,23 +91,4 @@ describe("append 冪等護欄:重試不放大全表讀", () => {
     expect(rawRowsSpy).toHaveBeenCalledTimes(2); // 建快取 1 次 + 護欄 fresh 讀 1 次
   });
 
-  it("降級保留:護欄查詢本身失敗 → 不快取失敗、照常重試(不因護欄掛了就放棄寫入)", async () => {
-    let calls = 0;
-    const { s, appendSpy } = makeStorage(async () => {
-      calls += 1;
-      if (calls < 3) throw rateLimit();
-      return { data: {} };
-    });
-    const rawRowsSpy = spyRawRows(s).mockRejectedValue(new Error("guard read failed"));
-
-    const advance = fakeTimers();
-    const p = s.append(ROW);
-    await advance();
-    await expect(p).resolves.toBeUndefined();
-    vi.useRealTimers();
-
-    expect(appendSpy).toHaveBeenCalledTimes(3); // 仍重試到成功
-    // 失敗不快取:兩次重試各問一次護欄(成功那次無重試、不問)。
-    expect(rawRowsSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
-  });
 });

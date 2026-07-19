@@ -25,6 +25,7 @@ import type { RefRow } from "../types.js";
 import { POOL_COLUMNS } from "../types.js";
 import type { TargetSpec } from "../targets.js";
 import { dedupKey } from "../pipeline/index.js";
+import { appendWithIdempotencyGuard } from "../shared/appendIdempotency.js";
 import { computeStats } from "./computeStats.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
@@ -185,25 +186,13 @@ export class GoogleSheetsStorage implements Storage {
 
   async append(row: RefRow): Promise<void> {
     const layout = await this.layout();
-    const key = dedupKey(row.連結);
-    // 冪等護欄的「既有 key 集合」在單次 append 的重試窗內只讀一次後快取:
-    // 連環 429 / 暫時性網路錯會逼出多次重試,舊版每次重試都做一次全表讀 → 故障時讀放大成 N 倍。
-    // 護欄查詢「成功」就快取本次結果重用;查詢「本身失敗」不快取(throw 出去,由 withRetry 吞掉照常重試),
-    // 維持「護欄掛了也不放棄寫入」的降級。參考池無時間窗、重試窗短,期間集合視為不變是安全的。
-    let keySetCache: Promise<Set<string>> | undefined;
-    const existingKeys = (): Promise<Set<string>> => {
-      const pending = (keySetCache ??= this.readRows()
-        .then((hits) => new Set(hits.map((h) => dedupKey(h.row.連結))))
-        .catch((err) => {
-          // 不快取失敗:清掉 pending,下次重試重新查(降級保留)。
-          if (keySetCache === pending) keySetCache = undefined;
-          throw err;
-        }));
-      return pending;
-    };
-    await withRetry(
-      "append",
-      () =>
+    const { key } = await appendWithIdempotencyGuard({
+      row,
+      keyOf: (candidate) => dedupKey(candidate.連結),
+      // 必須 fresh 讀參考池，不能用 dedupCache 的凍結快照；共用 helper 只快取本次重試窗。
+      fetchFreshKeys: () =>
+        this.readRows().then((hits) => new Set(hits.map((h) => dedupKey(h.row.連結)))),
+      append: () =>
         this.sheets.spreadsheets.values.append({
           spreadsheetId: this.sheetId,
           range: this.range(`A1:${colLetter(layout.width - 1)}`),
@@ -211,12 +200,7 @@ export class GoogleSheetsStorage implements Storage {
           insertDataOption: "INSERT_ROWS",
           requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, this.columns, layout)] },
         }),
-      {
-        // 冪等護欄:呼叫端(collect)已先去重,故重試前若這連結 key 已在表上,
-        // 必是上一次「寫成功但回應遺失」留下的,視為完成,避免重試雙寫。
-        alreadyDone: async () => !!key && (await existingKeys()).has(key),
-      },
-    );
+    });
     // 寫入成功 → 併入去重快取,讓同輪稍後的重複連結不必重讀全表也擋得到。
     if (key) this.dedupCache?.set(key, row);
   }
