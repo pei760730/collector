@@ -1,12 +1,13 @@
 /**
- * drain 迴圈本體 —— 從 drain.ts 抽出成可注入測試的純迴圈(getUpdates→handleUpdate→ack)。
- * drain.ts 是進程進入點(import 即執行 main),測試無法直接 import;
- * abort/ack 語意與 exit code 對映在這裡,tests/drainLoop.test.ts 用假 bot 釘住。
+ * shell(voc/tbvoc) 與 of 共用的 drain 迴圈。
+ *
+ * 只收 target 無關的 getUpdates→handleUpdate→ack、persist abort 與 exit code 語意；
+ * 寫入目的地名稱由呼叫端注入，保留既有 target-specific log 文案。
  */
 import type { Update } from "@telegraf/types";
-import { logger } from "./utils/logger.js";
+import { logger } from "@pei760730/collector-core";
 
-/** drain 迴圈需要的最小 bot 介面(Telegraf 子集;測試注入假件即可,不用真連線)。 */
+/** drain 迴圈需要的最小 bot 介面(Telegraf 子集；測試注入假件即可，不用真連線)。 */
 export interface DrainableBot {
   telegram: {
     getUpdates(
@@ -19,7 +20,7 @@ export interface DrainableBot {
   handleUpdate(update: Update): Promise<unknown>;
 }
 
-/** 寫入失敗 side-channel 旗標(createBot hooks.onPersistError 翻 true;每筆處理前歸零)。 */
+/** 寫入失敗 side-channel 旗標(createBot hooks.onPersistError 翻 true；每筆處理前歸零)。 */
 export interface PersistFlag {
   failed: boolean;
 }
@@ -27,11 +28,15 @@ export interface PersistFlag {
 export interface DrainResult {
   /** 成功處理並 ack 的更新數。 */
   processed: number;
-  /** true = 某筆寫入參考池失敗 → 停在該 offset 提前結束(該筆與之後的下次 cron 重領)。 */
+  /** true = 某筆持久化失敗 → 停在該 offset 提前結束(該筆與之後的下次 cron 重領)。 */
   aborted: boolean;
 }
 
-export async function drainUpdates(bot: DrainableBot, persist: PersistFlag): Promise<DrainResult> {
+export async function drainUpdates(
+  bot: DrainableBot,
+  persist: PersistFlag,
+  persistDestination: string,
+): Promise<DrainResult> {
   let offset = 0;
   let processed = 0;
   let aborted = false;
@@ -51,10 +56,12 @@ export async function drainUpdates(bot: DrainableBot, persist: PersistFlag): Pro
         // 寫入失敗(可重試):不前進 offset、結束整個 drain,之後不再呼叫 getUpdates ——
         // 本批的新 offset(含同批已成功筆推進的那段)從未回報給 Telegram,所以下次 cron
         // 從 offset=0 起把「失敗批含同批已成功筆 + 之後全部」整段重領(更早的完整批次
-        // 已被本輪後續 getUpdates 帶新 offset ack 掉)。重領的已成功筆靠 storage 連結 key
-        // 去重吸收,副作用 = 分享者會再收到一次「已收過」回覆;失敗筆重新寫入。
-        // 這樣才真正 at-least-once,不會把沒寫成功的訊息默默 ack 掉(CLAUDE.md 紅線)。
-        logger.error(`update ${u.update_id} 寫入參考池失敗 → 停在此 offset,結束本輪讓下次 cron 重領`);
+        // 已被本輪後續 getUpdates 帶新 offset ack 掉)。重領的已成功筆由各 target storage
+        // 去重吸收；失敗筆重新寫入。這樣才真正 at-least-once,不會把沒寫成功的訊息
+        // 默默 ack 掉(CLAUDE.md 紅線)。
+        logger.error(
+          `update ${u.update_id} 寫入${persistDestination}失敗 → 停在此 offset,結束本輪讓下次 cron 重領`,
+        );
         aborted = true;
         break outer;
       }
@@ -63,15 +70,11 @@ export async function drainUpdates(bot: DrainableBot, persist: PersistFlag): Pro
     }
   }
   // 正常結束時最後一次「空批」getUpdates(offset) 已 ack 最後一批,不需額外補 ack。
-  // 中止結束時刻意不 ack 未處理段,留給下次 cron 重領。
+  // 中止結束時刻意不 ack 未處理段(含失敗那筆),留給下次 cron 重領。
   return { processed, aborted };
 }
 
-/**
- * exit code 對映:aborted(寫入失敗中止)→ 2,正常 → 0。
- * 舊版 aborted 也 exit 0 → collect.yml 綠燈、kai-notify(if: failure())永不觸發;
- * Sheets 壞掉 + ERROR_CHAT_ID 沒設時 = 靜默丟資料。非零退出讓 Actions 紅燈成為底線告警。
- */
+/** aborted(寫入失敗中止)→ 2，正常 → 0，讓 collect.yml 不會假綠。 */
 export function exitCodeFor(result: DrainResult): number {
   return result.aborted ? 2 : 0;
 }

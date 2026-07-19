@@ -11,7 +11,7 @@
  * 該筆「沒持久化」不可 ack。drain 停在當前 offset、結束本輪,留給下次 cron 重領(去重擋重複)。
  * 絕不把沒寫成功的訊息默默 ack 掉(= 靜默丟資料,CLAUDE.md 紅線)。
  *
- * 迴圈本體(getUpdates→handleUpdate→ack;abort 語意)與 exit code 對映抽在 drainLoop.ts,
+ * 迴圈本體(getUpdates→handleUpdate→ack;abort 語意)與 exit code 對映抽在 shared/drainLoop.ts,
  * 可注入假 bot 測試(本檔是 entry,import 即執行,測試載不進來)。
  */
 import { createBot } from "./bot/router.js";
@@ -19,10 +19,10 @@ import { loadConfig } from "./config.js";
 import {
   drainUpdates,
   exitCodeFor,
-  makeGateAlerter,
   type DrainResult,
   type PersistFlag,
-} from "./drainLoop.js";
+} from "../../shared/drainLoop.js";
+import { makeGateAlerter } from "./drainLoop.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { MemoryStorage } from "./storage/memory.js";
 import type { Storage } from "./storage/Storage.js";
@@ -68,7 +68,7 @@ async function main(): Promise<DrainResult> {
   bot.botInfo = await bot.telegram.getMe(); // handleUpdate 解析群組 /command@botname 需要
   await bot.telegram.deleteWebhook({ drop_pending_updates: false }); // 清殘留 webhook,保留待領更新
 
-  const result = await drainUpdates(bot, persist);
+  const result = await drainUpdates(bot, persist, "暫存區");
 
   // exit 前先等 gate 告警送完:bootstrap 是 process.exit(exitCodeFor),會砍在途 I/O;
   // 舊寫法 fire-and-forget(void sendMessage)在這裡就會被砍掉、告警靜默消失。

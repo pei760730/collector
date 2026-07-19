@@ -3,13 +3,13 @@
  * drain.ts 是進程進入點(import 即跑 main + 真連線),測試無法直接 import;
  * 抽成可注入 config/storage/target 的函式後,tests/drainExit.test.ts 才能用
  * Telegram.prototype.callApi stub(CLAUDE.md 第三層攔截點)釘住退出碼與告警語意。
- * 迴圈本體(offset/abort/ack)仍在 drainLoop.ts(tests/drainLoop.test.ts 用假 bot 釘住)。
+ * 迴圈本體(offset/abort/ack)在 shared/drainLoop.ts(tests/shared/drainLoop.test.ts 用假 bot 釘住)。
  */
 import { createBot } from "./bot/router.js";
 import type { Config } from "./config.js";
 import type { Storage } from "./storage/Storage.js";
 import { VOC_TARGET, type TargetSpec } from "./targets.js";
-import { drainUpdates, exitCodeFor, type PersistFlag } from "./drainLoop.js";
+import { drainUpdates, exitCodeFor, type PersistFlag } from "./shared/drainLoop.js";
 import { logger } from "./utils/logger.js";
 
 export async function runDrain(
@@ -38,7 +38,7 @@ export async function runDrain(
   // 確保沒有殘留 webhook(否則 getUpdates 回 409 Conflict);保留待領更新不丟。
   await bot.telegram.deleteWebhook({ drop_pending_updates: false });
 
-  const result = await drainUpdates(bot, persist);
+  const result = await drainUpdates(bot, persist, "參考池");
 
   logger.info(
     `drain ${result.aborted ? "中止(寫入失敗,部分未處理)" : "完成"}:已處理 ${result.processed} 筆更新`,
