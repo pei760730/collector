@@ -2,34 +2,28 @@
  * 讀環境變數 → 型別化 config。憑證/token 一律走 env,不進版控。
  * 缺必要變數會在啟動時丟錯(fail fast),不要讓 bot 帶半套設定跑起來。
  */
-import dotenv from "dotenv";
 import {
   required,
   optional,
-  boolEnv,
   enumEnv,
-  chatIdsEnv,
   loadGoogleCredentials,
   type GoogleServiceAccountCredentials,
 } from "@pei760730/collector-core";
-import { logger } from "./utils/logger.js";
+import {
+  createConfigLoader,
+  type StorageMode as SharedStorageMode,
+} from "./shared/configSafety.js";
 import type { TargetName } from "./targets.js";
 
 // chatIdsEnv 對外 re-export:白名單嚴格解析是公開 repo 的防灌池閘門,
 // tests/config.test.ts 釘住 core 行為不漂移(原與 clip-collector 的同組守則;#9 三併一後
 // 該 repo 已併入本 repo 並 archive,同步義務已內化,單邊守住即可)。
-export { chatIdsEnv };
-
-// override:true —— .env 蓋過系統既有環境變數。
-// 原因:Windows 系統環境若殘留舊/打錯的 TELEGRAM_BOT_TOKEN,dotenv 預設不覆蓋會讓
-// bot 拿到壞值(踩過 l→1 typo 的 401)。Docker 沒 .env 檔時此行 no-op,不影響真環境。
-// quiet:true —— dotenv v17 預設會印 tip 行,靜音避免污染 CI 輸出。
-dotenv.config({ override: true, quiet: true });
+export { chatIdsEnv } from "./shared/configSafety.js";
 
 // required / optional / boolEnv / enumEnv / chatIdsEnv / loadGoogleCredentials 已上移至
 // collector-core(v0.3.0);此處只保留 bot 專屬的 Config 型別與 loadConfig 組裝。
 
-export type StorageMode = "sheets" | "memory";
+export type StorageMode = SharedStorageMode;
 
 export interface Config {
   /** 寫入目標(#9 三併一:一殼多表)。env COLLECTOR_TARGET,預設 voc = 既有行為零變更。 */
@@ -51,41 +45,18 @@ export interface Config {
   logLevel: string;
 }
 
-let cached: Config | null = null;
+const loadConfigSingleton = createConfigLoader({
+  sheetsDestination: "參考池",
+  loadGoogleConfig: () => ({
+    credentials: loadGoogleCredentials(),
+    sheetId: required("GOOGLE_SHEET_ID"),
+    poolSheetName: optional("POOL_SHEET_NAME", "參考池"),
+  }),
+  loadExtension: () => ({
+    target: enumEnv("COLLECTOR_TARGET", ["voc", "tbvoc"] as const, "voc"),
+  }),
+});
 
 export function loadConfig(): Config {
-  if (cached) return cached;
-  const storage = enumEnv("STORAGE", ["sheets", "memory"] as const, "sheets");
-  // memory 乾跑模式不碰 Google 憑證,讓只有 token 也能啟動測 bot 回覆
-  const google =
-    storage === "memory"
-      ? null
-      : {
-          credentials: loadGoogleCredentials(),
-          sheetId: required("GOOGLE_SHEET_ID"),
-          poolSheetName: optional("POOL_SHEET_NAME", "參考池"),
-        };
-  cached = {
-    target: enumEnv("COLLECTOR_TARGET", ["voc", "tbvoc"] as const, "voc"),
-    telegramToken: required("TELEGRAM_BOT_TOKEN"),
-    storage,
-    google,
-    errorChatId: optional("ERROR_CHAT_ID", ""),
-    allowedChatIds: chatIdsEnv("ALLOWED_CHAT_IDS"),
-    expandShortUrls: boolEnv("EXPAND_SHORT_URLS", false),
-    logLevel: optional("LOG_LEVEL", "info"),
-  };
-  // 公開 repo 防灌池:sheets 模式(=正式寫真表)必須設來源白名單,否則任何人都能餵 bot 寫進你的表。
-  // 寧可 fail-fast 紅燈被發現,也不要默默大開。memory 乾跑不寫真表,免設。
-  if (storage === "sheets" && cached.allowedChatIds.length === 0) {
-    throw new Error(
-      "STORAGE=sheets 但未設 ALLOWED_CHAT_IDS:正式寫表必須限定來源 chat id(逗號分隔純數字),否則公開後任何人都能灌你的參考池",
-    );
-  }
-  // sheets 模式沒設 ERROR_CHAT_ID:notifyError 全程 no-op,寫入失敗只剩 Actions 紅燈
-  // (drain aborted → exit 2)可見。不 fail-fast(告警管道是選配),但開機明講,別默默沒告警。
-  if (storage === "sheets" && cached.errorChatId === "") {
-    logger.warn("ERROR_CHAT_ID 未設,寫入失敗將無 Telegram 告警(只剩 collect.yml 紅燈/exit code)");
-  }
-  return cached;
+  return loadConfigSingleton();
 }
