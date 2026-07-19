@@ -28,6 +28,7 @@ import type { StagingRow } from "../types.js";
 import { STAGING_COLUMNS } from "../types.js";
 import { computeStats } from "./computeStats.js";
 import { logger } from "../utils/logger.js";
+import { appendWithIdempotencyGuard } from "../../../shared/appendIdempotency.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
@@ -268,24 +269,12 @@ export class GoogleSheetsStorage implements Storage {
     // 視為完成、不重打。VIDEO_ID 涵蓋 raw_*(raw_<ts> 在 extract 階段即固定、本次 append 內不變)。
     // 唯一無法護欄的情形 = VIDEO_ID 為空(無穩定鍵):此時查不到、照常重試(退回原行為)。
     //
-    // 讀放大防護:護欄的「既有 VIDEO_ID 集合」在單次 append 的重試窗內只讀一次後快取——
-    // 連環 429 / 暫態網路錯會逼出多次重試,舊版每次重試都做一次全表讀 → 故障時讀放大成 N 倍。
-    // 查詢「成功」快取重用;查詢「本身失敗」不快取(throw 出去由 withRetry 吞掉照常重試),
-    // 維持「護欄掛了也不放棄寫入」的降級。重試窗短,期間集合視為不變是安全的。
-    // 注意:這是每次 append 各自 fresh 的一次性快取,與實例級 videoIdCache(去重索引)無關,
-    // 護欄不可讀凍結的去重快取,否則偵測不到「上次寫成功但回應遺失」。
-    const videoId = row.VIDEO_ID.trim();
-    let keySetCache: Promise<Set<string>> | undefined;
-    const existingIds = (): Promise<Set<string>> => {
-      const pending = (keySetCache ??= this.freshVideoIds(layout).catch((err) => {
-        if (keySetCache === pending) keySetCache = undefined; // 不快取失敗:下次重試重問
-        throw err;
-      }));
-      return pending;
-    };
-    const res = (await withRetry(
-      "append",
-      () =>
+    const { key: videoId, result: res } = await appendWithIdempotencyGuard({
+      row,
+      keyOf: (candidate) => candidate.VIDEO_ID.trim(),
+      // 必須 fresh 讀暫存區，不能用 videoIdCache 的凍結快照；共用 helper 只快取本次重試窗。
+      fetchFreshKeys: () => this.freshVideoIds(layout),
+      append: () =>
         this.sheets.spreadsheets.values.append({
           spreadsheetId: this.sheetId,
           range: this.range(`A1:${colLetter(layout.width - 1)}`),
@@ -293,8 +282,7 @@ export class GoogleSheetsStorage implements Storage {
           insertDataOption: "INSERT_ROWS",
           requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, STAGING_COLUMNS, layout)] },
         }),
-      { alreadyDone: videoId ? async () => (await existingIds()).has(videoId) : undefined },
-    )) as { data?: { updates?: { updatedRange?: string } } };
+    });
     // 寫入成功 → 併入去重快取,讓同輪稍後的重複 VIDEO_ID 不必重讀全表也擋得到。
     // alreadyDone 命中(上次寫成功但回應遺失)時 withRetry 回 undefined、拿不到 updatedRange,
     // 舊版解析落 rowNumber=0(假列號)仍併進快取 → 這裡改成「解析不到真實列號就不併」:
