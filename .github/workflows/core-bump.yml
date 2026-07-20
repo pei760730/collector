@@ -19,4 +19,9 @@ concurrency:
 jobs:
   bump:
     uses: pei760730/collector-core/.github/workflows/consumer-bump.yml@main
-    secrets: inherit
+    # 最小權限:顯式只傳 kai-notify 兩把(= 對方 workflow_call.secrets 宣告的全部)。
+    # 不用 secrets: inherit —— 那會把本 repo 全部 secrets(三組 bot token / SA 私鑰)整包
+    # 交給跨 repo 的 reusable workflow;顯式傳遞後,@main 端就算被改壞,波及面只剩通知兩把。
+    secrets:
+      KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
+      KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
