@@ -3,6 +3,7 @@
  */
 import { Telegraf, type Context } from "telegraf";
 import { message } from "telegraf/filters";
+import { isTransient } from "@pei760730/collector-core";
 import type { Config } from "../config.js";
 import type { Storage } from "../storage/Storage.js";
 import { runIngest } from "./handlers/ingest.js";
@@ -71,6 +72,9 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
       if (result.error) await notifyError(result.error);
     } catch (err) {
       logger.error("ingest 例外", err);
+      // videoIdIndex() 全表讀在 inner try 之外:暫態失敗照常 ack 會讓這則訊息從佇列
+      // 永久消失。比照主 router 夯度 callback 翻 persist 旗標,drain 停在此 offset 下輪重領。
+      if (isTransient(err)) hooks?.onPersistError?.();
       await ctx.reply("❌ 處理時發生未預期錯誤。").catch(() => {});
       await notifyError(`ingest 例外:${errText(err)}`);
     }

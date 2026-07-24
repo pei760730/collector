@@ -108,6 +108,10 @@ export function createBot(
       if (result.error) await notifyError(result.error);
     } catch (err) {
       logger.error("collect 例外", err);
+      // dedupIndex() 全表讀在 inner try 之外:暫態失敗(429/5xx/斷線)若照常 ack,這則
+      // 訊息就從佇列永久消失。比照夯度 callback(下方)翻 persist 旗標讓 drain 停在此
+      // offset、下次 cron 重領重試;非暫態重領也沒用,維持通知後照常 ack。
+      if (isTransient(err)) hooks?.onPersistError?.();
       await ctx.reply("❌ 處理時發生未預期錯誤。").catch(() => {});
       await notifyError(`collect 例外:${errText(err)}`);
     }

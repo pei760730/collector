@@ -107,7 +107,9 @@ export async function runCollect(
       };
     }
 
-    logger.info(`收錄 ${draft.row.平台} ${draft.row.連結}`);
+    // public repo 的 Actions log 誰都看得到:只印平台、不印連結(dedupKey 對 unsupported
+    // 平台 fallback=完整 URL,一樣不印)。明細在表裡;of 引擎收錄行同紀律(只印 VIDEO_ID)。
+    logger.info(`收錄 ${draft.row.平台}`);
     const reply = target.successMsg(draft.row, {
       unsupported: draft.unsupported,
       isShortUrl: draft.isShortUrl,
