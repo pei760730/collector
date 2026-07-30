@@ -25,3 +25,29 @@ jobs:
     secrets:
       KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
       KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
+
+  # ── 被中止(cancelled)的唯一出口 ─────────────────────────────────────────
+  # core 那端的 `bump` job 有 timeout-minutes: 30(實測最長 14.4 分)。逾時到點 /
+  # 人為按停 → conclusion 是 `cancelled` 而非 `failure`,GitHub 直接跳過剩下的步驟,
+  # 所以 consumer-bump.yml 裡那個 `if: failure()` 的 kai-notify 對這個狀態完全免疫。
+  # 這支又是 cron(每日 06:17)且不在 kai-notify/fleet-digest 的 MONITORED 名單裡 ——
+  # 三層剛好對齊成一個靜默盲區:被中止 = 這輪沒開 bump PR,而 owner 收不到任何訊息。
+  # step 層條件看不到這個狀態,只有 job 層的 needs.<job>.result 看得到,故必須獨立 job。
+  # 同 th-ops/remind.yml、ig-insights-sync/token-refresh.yml 的既有寫法。
+  notify-cancelled:
+    needs: bump
+    if: ${{ always() && needs.bump.result == 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {} # 只送通知,不需要上面那三把 write
+    steps:
+      - name: Error annotation (API-blip resilient)
+        run: echo "::error::collector core-bump was CANCELLED (timeout or manual stop) — 這輪沒檢查 collector-core 新版、沒開 bump PR。"
+
+      - name: Report to Kai (kai-notify, fail-soft)
+        uses: pei760730/kai-notify@v1
+        env:
+          KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
+          KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
+        with:
+          text: "🟠 collector core-bump 被中止(逾時或人為按停)——這輪沒檢查 core 新版、沒開 bump PR,需要重跑 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
