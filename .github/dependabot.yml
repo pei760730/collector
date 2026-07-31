@@ -25,3 +25,18 @@ updates:
       github-actions:
         patterns:
           - "*"
+  # npm 也要管:2026-07-31 開安全警報後首掃,本 repo 累積 critical×1+high×4
+  # (vitest 2 舊鏈 + googleapis-common 釘死的舊 gaxios)—— 基線只蓋
+  # github-actions,npm 沒人看。節奏對齊 actions(1/15 號彙整)。
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: cron
+      cronjob: "0 9 1,15 * *"
+      timezone: Asia/Taipei
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns:
+          - "*"
