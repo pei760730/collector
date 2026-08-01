@@ -32,6 +32,14 @@ function makeFakeBot(opts: {
     telegram: {
       async getUpdates(_timeout, _limit, offset, _allowed) {
         offsetsSeen.push(offset);
+        // 2026-08-01 M5 回填:ack off-by-one(offset 少 +1)會讓同一批被永久
+        // 重領——真實症狀是測試 worker 吃到 heap-OOM 而不是斷言紅。這裡把
+        // 「offset 卡住」直接變成可讀的失敗訊息。
+        if (offsetsSeen.filter((o) => o === offset).length > 3) {
+          throw new Error(
+            `offset ${offset} 重複領取超過 3 次 — ack off-by-one?(offset 必須是 last update_id + 1)`,
+          );
+        }
         return opts.updates.filter((u) => u.update_id >= offset).slice(0, 1);
       },
     },
