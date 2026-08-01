@@ -6,6 +6,7 @@
  */
 import type { Update } from "@telegraf/types";
 import { logger } from "@pei760730/collector-core";
+import { callTelegramWithRetry } from "./telegramRetry.js";
 
 /** drain 迴圈需要的最小 bot 介面(Telegraf 子集；測試注入假件即可，不用真連線)。 */
 export interface DrainableBot {
@@ -42,7 +43,9 @@ export async function drainUpdates(
   let aborted = false;
   outer: for (;;) {
     // timeout=0 → 不長等:有就回、沒有立刻回空(一次性語意,不要 block 住 Actions)。
-    const updates = await bot.telegram.getUpdates(0, 100, offset, undefined);
+    const updates = await callTelegramWithRetry("getUpdates", () =>
+      bot.telegram.getUpdates(0, 100, offset, undefined),
+    );
     if (updates.length === 0) break;
     for (const u of updates) {
       persist.failed = false;
