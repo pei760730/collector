@@ -40,3 +40,14 @@ updates:
       npm:
         patterns:
           - "*"
+    ignore:
+      # dev 工具鏈大版不走月批自動提案(2026-08-01 首批 npm 月批實撞:
+      # TS 5.9→7.0/6.0 打爆 typecheck、vitest 3→4 剛出爐、@types/node 26=
+      # Node 26 型別但 CI 跑 20/22 —— types 該釘 runtime 線)。
+      # 大版升級走 deliberate PR:本機實跑 typecheck+test 再釘。minors/patches 照流。
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
