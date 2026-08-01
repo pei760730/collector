@@ -22,6 +22,7 @@ import {
   type DrainResult,
   type PersistFlag,
 } from "../../shared/drainLoop.js";
+import { callTelegramWithRetry } from "../../shared/telegramRetry.js";
 import { makeGateAlerter } from "./drainLoop.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { MemoryStorage } from "./storage/memory.js";
@@ -61,7 +62,7 @@ async function main(): Promise<DrainResult> {
     },
   });
   const gateAlerter = makeGateAlerter(config.errorChatId, (chatId, text) =>
-    bot.telegram.sendMessage(chatId, text),
+    callTelegramWithRetry("sendMessage", () => bot.telegram.sendMessage(chatId, text)),
   );
   sendGateAlert = gateAlerter.send;
   flushGateAlert = gateAlerter.flush;

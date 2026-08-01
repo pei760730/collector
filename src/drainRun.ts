@@ -10,6 +10,7 @@ import type { Config } from "./config.js";
 import type { Storage } from "./storage/Storage.js";
 import { VOC_TARGET, type TargetSpec } from "./targets.js";
 import { drainUpdates, exitCodeFor, type PersistFlag } from "./shared/drainLoop.js";
+import { callTelegramWithRetry } from "./shared/telegramRetry.js";
 import { logger } from "./utils/logger.js";
 
 export async function runDrain(
@@ -49,12 +50,12 @@ export async function runDrain(
   // 告警本身失敗不影響退出碼 —— 紅燈(exit 2 → collect.yml failure → kai-notify)是兜底,不能被吞。
   // voc 維持既有行為(drainAbortAlert=false,只靠 exit 2 紅燈 + router notifyError),零變更。
   if (result.aborted && target.drainAbortAlert && config.errorChatId) {
-    await bot.telegram
-      .sendMessage(
+    await callTelegramWithRetry("sendMessage", () =>
+      bot.telegram.sendMessage(
         config.errorChatId,
         `🐞 drain 中止:寫入參考池失敗(已成功 ${result.processed} 筆後停下),未 ack 段留待下次 cron 重領。詳見 Actions log。`,
-      )
-      .catch((e) => logger.error("通知 error chat 失敗", e));
+      ),
+    ).catch((e) => logger.error("通知 error chat 失敗", e));
   }
   return exitCodeFor(result);
 }
