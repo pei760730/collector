@@ -246,3 +246,21 @@ describe("夯度純函式單元測", () => {
     }
   });
 });
+
+
+describe("hotKeyFits 64-byte 精確邊界(2026-08-01 突變倖存者 M16 回填)", () => {
+  // Telegram callback_data 硬上限 64 bytes。預算縮到 63 = 放得下的 key 被靜默
+  // 拔按鈕;放大到 65 = 送出時被 Telegram API 整則拒收(危險方向)。釘死邊界。
+  const prefixLen = Buffer.byteLength(hotCbData(HOT.length - 1, ""), "utf8");
+
+  it("恰好 64 bytes → true", () => {
+    const key = "k".repeat(64 - prefixLen);
+    expect(Buffer.byteLength(hotCbData(HOT.length - 1, key), "utf8")).toBe(64);
+    expect(hotKeyFits(key, HOT)).toBe(true);
+  });
+
+  it("65 bytes → false", () => {
+    const key = "k".repeat(65 - prefixLen);
+    expect(hotKeyFits(key, HOT)).toBe(false);
+  });
+});
