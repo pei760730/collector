@@ -19,8 +19,20 @@ describe("isOfTarget — of 委派判定(trim + lowercase)", () => {
     expect(isOfTarget("OF")).toBe(true);
   });
 
+  it('"ofgay" → 委派(gay 市場,同引擎不同表)', () => {
+    expect(isOfTarget("ofgay")).toBe(true);
+  });
+
+  it('"OFGAY "(大寫+尾空白)→ 委派(正規化對新 target 同樣成立)', () => {
+    expect(isOfTarget("OFGAY ")).toBe(true);
+  });
+
   it('"voc" → 不委派(走殼)', () => {
     expect(isOfTarget("voc")).toBe(false);
+  });
+
+  it('"ofx"(非名單內的 of 前綴)→ 不委派(判定是集合比對,不是 startsWith)', () => {
+    expect(isOfTarget("ofx")).toBe(false);
   });
 
   it("未帶參數且 env 未設 → 預設 voc,不委派", () => {

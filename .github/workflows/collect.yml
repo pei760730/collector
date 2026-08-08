@@ -4,7 +4,7 @@ name: collect
 # 取代常駐機器:repo 是 public → Actions 免費額度無上限,$0。
 # Telegram 保留未領更新約 24h,只要間隔 < 24h 就不漏訊息。
 #
-# #9 三併一:同一條 workflow 以 matrix 跑多個 target(voc / tbvoc / of),每個 target
+# #9 三併一:同一條 workflow 以 matrix 跑多個 target(voc / tbvoc / of / ofgay),每個 target
 # 是一隻獨立的 Telegram bot + 一張獨立的表;secrets 用 per-target 名稱間接注入
 # (matrix 只放 secret「名字」,值仍在 GitHub Secrets,不經 matrix 明文)。
 on:
@@ -54,6 +54,16 @@ jobs:
             sheet_secret: OF_GOOGLE_SHEET_ID
             allowed_secret: OF_ALLOWED_CHAT_IDS
             error_secret: OF_ERROR_CHAT_ID
+          # ofgay(gay 市場,2026-08-08):**同一支 engines/of 引擎**、只換 bot + 換表,
+          # secrets 用 OFGAY_ 前綴。下游 = of-gay-engine repo(of-content-engine 的 fork)。
+          # ⚠️ 現況「休眠」:五支 secrets 全空 → 守門判定未接線,跳過、不紅燈。
+          # 接線時五支要一次貼齊(貼一半 = 紅燈,見下方守門)。
+          - target: ofgay
+            token_secret: OFGAY_TELEGRAM_BOT_TOKEN
+            sa_secret: OFGAY_GOOGLE_SERVICE_ACCOUNT_JSON
+            sheet_secret: OFGAY_GOOGLE_SHEET_ID
+            allowed_secret: OFGAY_ALLOWED_CHAT_IDS
+            error_secret: OFGAY_ERROR_CHAT_ID
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

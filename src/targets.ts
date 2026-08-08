@@ -96,6 +96,15 @@ export function getTarget(name: TargetName): TargetSpec {
 }
 
 /**
+ * of 引擎的 target 名單 —— 同一支 vendored 引擎、不同 bot + 不同表。
+ * 引擎自己吃 raw env(GOOGLE_SHEET_ID / TELEGRAM_BOT_TOKEN …),表的差異全在 secrets,
+ * 所以「多開一個市場」= 這裡多一個名字 + collect.yml 多一筆 matrix,引擎一行不動。
+ * - `of`    = 女性市場(原 feed-collector,OF_ 前綴 secrets)
+ * - `ofgay` = gay 市場(2026-08-08,OFGAY_ 前綴 secrets,下游 repo of-gay-engine)
+ */
+export const OF_ENGINE_TARGETS: readonly string[] = ["of", "ofgay"];
+
+/**
  * of 委派判定(#9 Phase 3)—— drain.ts 與 index.ts 兩個 entry 共用的唯一判定點。
  * of 走 src/engines/of vendored 引擎、刻意不在 TargetSpec 內,所以判定吃 raw env,
  * 不能走 enumEnv(那條只認 voc/tbvoc)。正規化 trim + lowercase:殼內 enumEnv(core)
@@ -104,5 +113,5 @@ export function getTarget(name: TargetName): TargetSpec {
  * trim 另一邊漏掉的前科,#72),抽成 helper 斷根。
  */
 export function isOfTarget(env: string | undefined = process.env.COLLECTOR_TARGET): boolean {
-  return (env ?? "voc").trim().toLowerCase() === "of";
+  return OF_ENGINE_TARGETS.includes((env ?? "voc").trim().toLowerCase());
 }
