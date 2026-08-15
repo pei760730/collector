@@ -51,3 +51,11 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # 自家 git-tag 依賴完全不走月批:collector-core 由 core-bump.yml 每日 cron
+      # 專管(呼叫 core 的 consumer-bump.yml,SSOT 在 core 端)。兩套機制同時管一個
+      # pin 會撞上面那個 cooldown 窗 —— 2026-08-15 實撞:v0.5.0 當天 03:52 打 tag
+      # (< cooldown 7 天)被排除,dependabot 算出的「合格最新版」= v0.4.0(07-25),
+      # 於是把 core-bump 剛推上去的 spec 往回寫成 v0.5.0→v0.4.0 降級;而舊 core 的
+      # API 沒斷,CI 全綠,肉眼幾乎抓不到。`@dependabot rebase` 回「已與 main 同步」、
+      # `recreate` 重算同結果 —— 它認為降級才是正解,只能手改(PR #105)。
+      - dependency-name: "@pei760730/collector-core"
