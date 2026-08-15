@@ -20,12 +20,12 @@
     "@pei760730/collector-core": "github:pei760730/collector-core#v0.5.0",
     "dayjs": "^1.11.13",
     "dotenv": "^17.4.2",
-    "googleapis": "^173.0.0",
+    "googleapis": "^174.0.1",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.11",
     "typescript": "^6.0.3",
     "vitest": "^3.2.7"
   },
