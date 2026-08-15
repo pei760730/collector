@@ -45,6 +45,17 @@ updates:
       # TS 5.9→7.0/6.0 打爆 typecheck、vitest 3→4 剛出爐、@types/node 26=
       # Node 26 型別但 CI 跑 20/22 —— types 該釘 runtime 線)。
       # 大版升級走 deliberate PR:本機實跑 typecheck+test 再釘。minors/patches 照流。
+      #
+      # ⚠️ 這條 ignore 擋的是「大版自動進來」這個模式,**不是**「這一版不要」。ignore 一寫上去
+      # 就沒有任何機制會再提醒,deliberate PR 沒人開 = 靜默凍結。2026-08-15 實際發生:8/1 寫下
+      # 這條後沒人開過 deliberate PR,14 天後 core 已在 TS 7 + vitest 4,消費端還停在 TS 6 +
+      # vitest 3,上下游工具鏈分岔。**下次加 ignore 時,同一支 PR 就要決定誰在什麼時候開那支
+      # deliberate PR**,否則別加。
+      #
+      # 2026-08-15 deliberate PR 已消化 TS 6.0.3→7.0.2 + vitest 3.2.7→4.1.10:
+      # 零程式碼改動、tsconfig 不需補 types:["node"](本 repo @types/node 仍正常載入,
+      # 已用植入型別錯誤反驗 typecheck 不是空跑),dist 的 40 支 .js 與 TS 6 逐檔 sha256 相同。
+      # @types/node 維持 22:它釘的是 runtime 線(CI 跑 Node 22、core engines >=22),不是釘最新。
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
       - dependency-name: vitest
