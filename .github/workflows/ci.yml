@@ -43,7 +43,7 @@ jobs:
           console.log('collector-core ok: '+inst);
           "
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run coverage
       - run: npm run build
       # main push 紅燈才報(PR 紅燈在 PR 頁自己會看到,不吵):收攏推到統一通知 bot
       # (@MYNOOTIFYBot),走 kai-notify(fail-soft),用法對齊 collect.yml。

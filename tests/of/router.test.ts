@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { Telegram } from "telegraf";
 import type { Update } from "@telegraf/types";
 import { createBot } from "../../src/engines/of/bot/router.js";
 import { MemoryStorage } from "../../src/engines/of/storage/memory.js";
 import type { Storage } from "../../src/engines/of/storage/Storage.js";
 import type { Config } from "../../src/engines/of/config.js";
+import { logger } from "../../src/engines/of/utils/logger.js";
 
 function memoryConfig(overrides: Partial<Config> = {}): Config {
   return {
@@ -45,7 +46,7 @@ function makeBot(storage: Storage, hooks?: { onPersistError?: () => void }) {
   return bot;
 }
 
-function photoWithCaption(caption: string): Update {
+function photoWithCaption(caption: string | undefined): Update {
   return {
     update_id: 1,
     message: {
@@ -120,6 +121,15 @@ describe("router caption routing(#2 媒體 caption 不再靜默丟失)", () => {
     expect(storage.all()).toHaveLength(0);
     expect(sent.some((t) => t.includes("看不懂"))).toBe(true);
   });
+
+  it("caption 欄存在但值缺失時以空字串處理", async () => {
+    const storage = new MemoryStorage();
+
+    await makeBot(storage).handleUpdate(photoWithCaption(undefined));
+
+    expect(storage.all()).toHaveLength(0);
+    expect(sent.some((t) => t.includes("看不懂"))).toBe(true);
+  });
 });
 
 describe("router onPersistError 透传(#1 drain 靠它停在 offset)", () => {
@@ -166,5 +176,48 @@ describe("router onPersistError 透传(#1 drain 靠它停在 offset)", () => {
     );
 
     expect(persistFailed).toBe(true);
+  });
+});
+
+describe("router 指令與外層例外", () => {
+  it.each([
+    ["/start", "收進暫存區"],
+    ["/help", "支援:Instagram"],
+    ["/unknown", "不認得這個指令"],
+  ])("%s 會回對應提示", async (command, expected) => {
+    await makeBot(new MemoryStorage()).handleUpdate(commandMessage(command));
+    expect(sent.some((text) => text.includes(expected))).toBe(true);
+  });
+
+  it("stats 讀取失敗會回錯誤提示並留下 error log", async () => {
+    const storage = new MemoryStorage();
+    vi.spyOn(storage, "stats").mockRejectedValue(new Error("stats boom"));
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    await makeBot(storage).handleUpdate(commandMessage("/stats"));
+
+    expect(sent).toContain("❌ 取統計失敗。");
+    expect(errorSpy.mock.calls.some((call) => String(call[0]).includes("/stats 失敗"))).toBe(true);
+    errorSpy.mockRestore();
+  });
+
+  it.each([
+    [429, true],
+    [undefined, false],
+  ])("ingest 外層例外 code=%s 時依暫態性決定是否停 offset", async (code, expected) => {
+    const storage = new MemoryStorage();
+    const failure = new Error("index boom") as Error & { code?: number };
+    failure.code = code;
+    vi.spyOn(storage, "videoIdIndex").mockRejectedValue(failure);
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    let persistFailed = false;
+
+    await makeBot(storage, {
+      onPersistError: () => (persistFailed = true),
+    }).handleUpdate(textMessage("https://www.tiktok.com/@u/video/7234567890"));
+
+    expect(persistFailed).toBe(expected);
+    expect(sent).toContain("❌ 處理時發生未預期錯誤。");
+    errorSpy.mockRestore();
   });
 });

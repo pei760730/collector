@@ -60,6 +60,33 @@ function photoWithCaption(caption: string): Update {
   } as unknown as Update;
 }
 
+function textMessage(text: string): Update {
+  return {
+    update_id: 2,
+    message: {
+      message_id: 11,
+      date: 0,
+      chat: { id: 123, type: "private", first_name: "Pei" },
+      from: { id: 9, is_bot: false, first_name: "Pei" },
+      text,
+    },
+  } as unknown as Update;
+}
+
+function commandMessage(cmd: string): Update {
+  return {
+    update_id: 5,
+    message: {
+      message_id: 14,
+      date: 0,
+      chat: { id: 123, type: "private", first_name: "Pei" },
+      from: { id: 9, is_bot: false, first_name: "Pei" },
+      text: cmd,
+      entities: [{ type: "bot_command", offset: 0, length: cmd.length }],
+    },
+  } as unknown as Update;
+}
+
 describe("router caption routing", () => {
   it("媒體 caption 裡的連結 → 走 collect 寫入(不再靜默丟失)", async () => {
     const storage = new MemoryStorage();
@@ -89,20 +116,6 @@ describe("router caption routing", () => {
 });
 
 describe("router /stats 回覆發送失敗不靜默", () => {
-  function commandMessage(cmd: string): Update {
-    return {
-      update_id: 5,
-      message: {
-        message_id: 14,
-        date: 0,
-        chat: { id: 123, type: "private", first_name: "Pei" },
-        from: { id: 9, is_bot: false, first_name: "Pei" },
-        text: cmd,
-        entities: [{ type: "bot_command", offset: 0, length: cmd.length }],
-      },
-    } as unknown as Update;
-  }
-
   it("reply 丟例外(封鎖 bot / chat 失效)→ 至少留 warn,不誤報「取統計失敗」到 error chat", async () => {
     const storage = new MemoryStorage();
     const bot = makeBot(storage);
@@ -124,6 +137,51 @@ describe("router /stats 回覆發送失敗不靜默", () => {
     // 統計本身成功 → 不該走「/stats 失敗」error 路徑(那會驚動 error chat)。
     expect(errorSpy.mock.calls.some((c) => String(c[0]).includes("/stats 失敗"))).toBe(false);
     warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+});
+
+describe("router 指令與例外路徑", () => {
+  it.each([
+    ["/start", "收進參考池"],
+    ["/help", "貼連結收錄"],
+    ["/unknown", "不認得這個指令"],
+  ])("%s 會回對應提示", async (command, expected) => {
+    await makeBot(new MemoryStorage()).handleUpdate(commandMessage(command));
+    expect(sent.some((text) => text.includes(expected))).toBe(true);
+  });
+
+  it("stats 讀取失敗會回錯誤提示並留下 error log", async () => {
+    const storage = new MemoryStorage();
+    vi.spyOn(storage, "stats").mockRejectedValue(new Error("stats boom"));
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    await makeBot(storage).handleUpdate(commandMessage("/stats"));
+
+    expect(sent).toContain("❌ 取統計失敗。");
+    expect(errorSpy.mock.calls.some((call) => String(call[0]).includes("/stats 失敗"))).toBe(true);
+    errorSpy.mockRestore();
+  });
+
+  it.each([
+    [429, true],
+    [undefined, false],
+  ])("collect 外層例外 code=%s 時依暫態性決定是否停 offset", async (code, expected) => {
+    const storage = new MemoryStorage();
+    const failure = new Error("index boom") as Error & { code?: number };
+    failure.code = code;
+    vi.spyOn(storage, "dedupIndex").mockRejectedValue(failure);
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    let persistFailed = false;
+    const bot = createBot(memoryConfig(), storage, {
+      onPersistError: () => (persistFailed = true),
+    });
+    bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
+
+    await bot.handleUpdate(textMessage("https://www.tiktok.com/@u/video/7234567890"));
+
+    expect(persistFailed).toBe(expected);
+    expect(sent).toContain("❌ 處理時發生未預期錯誤。");
     errorSpy.mockRestore();
   });
 });
