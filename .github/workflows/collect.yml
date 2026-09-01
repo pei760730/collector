@@ -9,7 +9,12 @@ name: collect
 # (matrix 只放 secret「名字」,值仍在 GitHub Secrets,不經 matrix 明文)。
 on:
   schedule:
-    - cron: "*/5 * * * *" # 每 5 分(UTC,GitHub 排程下限);實際 GitHub 常拖到更久,非秒到。public Actions 免費無上限
+    # ⚠️ 「每 5 分」是**申請值不是實際值**。2026-09-01 實測近 300 次 run(跨 11.8 天):
+    #   實際 25.4 次/天 → **到班率 8.8%**;間隔中位 0.5h、p90 1.7h、**最長 11.2h**。
+    #   目前沒有掉訊息(Telegram 保留未領更新約 24h,11.2h < 24h),但最差已吃掉約 47% 的邊際,
+    #   而 fitbit repo 早記錄過「schedule 越安靜的 repo 跑得越少」——邊際會隨 repo 變安靜而縮。
+    #   **維持 */5 是刻意的**:申請得密才換得到現在這個到班率,調疏只會更慢。這裡改的是說法不是值。
+    - cron: "*/5 * * * *" # 申請每 5 分(UTC,GitHub 排程下限);實際到班見上。public Actions 免費無上限
   workflow_dispatch: {} # 手動補跑(要立刻收就按這個)
 
 # 最小權限:這條 workflow 只需要 checkout(寫入走 Sheets API,不碰 repo)。
@@ -56,8 +61,10 @@ jobs:
             error_secret: OF_ERROR_CHAT_ID
           # ofgay(gay 市場,2026-08-08):**同一支 engines/of 引擎**、只換 bot + 換表,
           # secrets 用 OFGAY_ 前綴。下游 = of-gay-engine repo(of-content-engine 的 fork)。
-          # ⚠️ 現況「休眠」:五支 secrets 全空 → 守門判定未接線,跳過、不紅燈。
-          # 接線時五支要一次貼齊(貼一半 = 紅燈,見下方守門)。
+          # 現況「已接線」(2026-09-01 實測 run 33477540839:ofgay 有實跑 `tsx src/drain.ts`
+          # 並輸出「drain 完成:已處理 0 筆更新」,非守門跳過)。**本行原寫「休眠、五支 secrets
+          # 全空」,那是 2026-08-08 接線前的狀態,接線後沒跟著改** —— 宣告與實作漂移。
+          # 貼一半 = 紅燈,見下方守門。
           - target: ofgay
             token_secret: OFGAY_TELEGRAM_BOT_TOKEN
             sa_secret: OFGAY_GOOGLE_SERVICE_ACCOUNT_JSON
