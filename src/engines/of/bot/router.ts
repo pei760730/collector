@@ -13,6 +13,7 @@ import {
   createErrorNotifier,
   errText,
   installSourceAllowlist,
+  DRAIN_SAFE_TELEGRAF_OPTIONS,
 } from "../../../shared/telegramSafety.js";
 
 /** drain 模式注入的鉤子;常駐版不傳(undefined)。 */
@@ -22,7 +23,7 @@ export interface BotHooks {
 }
 
 export function createBot(config: Config, storage: Storage, hooks?: BotHooks): Telegraf {
-  const bot = new Telegraf(config.telegramToken);
+  const bot = new Telegraf(config.telegramToken, DRAIN_SAFE_TELEGRAF_OPTIONS);
 
   // 必須先於所有業務 handler，讓 polling 與 drain(handleUpdate)共用同一個來源 guard。
   installSourceAllowlist(bot, config);
