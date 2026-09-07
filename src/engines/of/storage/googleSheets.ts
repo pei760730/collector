@@ -284,14 +284,25 @@ export class GoogleSheetsStorage implements Storage {
         }),
     });
     // 寫入成功 → 併入去重快取,讓同輪稍後的重複 VIDEO_ID 不必重讀全表也擋得到。
-    // alreadyDone 命中(上次寫成功但回應遺失)時 withRetry 回 undefined、拿不到 updatedRange,
-    // 舊版解析落 rowNumber=0(假列號)仍併進快取 → 這裡改成「解析不到真實列號就不併」:
-    // 該筆已在表上,同輪稍後的重複會被 append 護欄的 fresh 讀再擋一次(不雙寫),
-    // 只是回覆從「已存在」變「已收錄」,可接受;不讓假列號污染 DuplicateHit 契約(1-based)。
+    //
+    // alreadyDone 命中(上次寫成功但回應遺失)時 withRetry 回 undefined、拿不到 updatedRange。
+    // 更早的版本會落 rowNumber=0(假列號)併進快取,污染 DuplicateHit 的 1-based 契約;
+    // 接著改成「解析不到真實列號就不併」,而理由寫的是「同輪稍後的重複會被 append 護欄的
+    // fresh 讀再擋一次(不雙寫)」——**那個理由是錯的**:fresh 讀只掛在 withRetry 的
+    // alreadyDone 上,而 alreadyDone 只在 catch 區塊裡跑(見 core dist/utils/retry.js)。
+    // 第二筆如果第一次 append 就成功,永遠不會問它 → 同一支影片寫出第二列。
+    //
+    // 兩個要求同時滿足的做法 = 拿不到真實列號就「作廢整份快取」:下次 videoIdIndex()
+    // 重讀全表拿到真列號,既不放假列號進契約,也不漏掉同輪重複。代價是罕見路徑多一次全表讀。
+    // 情境已由 tests/of/drainDedup.test.ts 的「append 回應遺失」那格釘住。
+    //
+    // (voc/tbvoc 殼沒有這個洞:src/storage/googleSheets.ts 是無條件 set,因為它的
+    //  dedupCache 存的是 row 而非列號,不存在假列號問題 —— 這個不對稱是意外不是設計。)
     if (videoId && this.videoIdCache && !this.videoIdCache.has(videoId)) {
       const a1 = (res?.data?.updates?.updatedRange ?? "").split("!").pop() ?? "";
       const m = a1.match(/\d+/);
       if (m) this.videoIdCache.set(videoId, { row, rowNumber: Number(m[0]) });
+      else this.videoIdCache = undefined; // 作廢 → 下次 videoIdIndex() 重讀全表
     }
   }
 }
