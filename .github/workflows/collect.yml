@@ -152,20 +152,33 @@ jobs:
         with:
           text: ${{ steps.failmsg.outputs.text }}
 
-  # ── 被中止(cancelled)的唯一出口 ─────────────────────────────────────────
-  # job 逾時到點 / 人為按停 / concurrency 取代 → conclusion 是 `cancelled` 而非
-  # `failure`,GitHub 會直接跳過剩下的步驟。所以上面所有 `if: failure()` 的通知
-  # 對這個狀態完全免疫:這輪沒做完,而 owner 收不到任何訊息。step 層條件看不到
-  # 這個狀態,只有 job 層的 needs.<job>.result 看得到,所以必須是獨立 job。
-  # 已實際發生過:th-customs-scan 的 scan.yml 歷史裡就有一次 cancelled 收場。
-  notify-cancelled:
+  # ── job 層級的唯一出口:failure 與 cancelled 都走這裡 ──────────
+  # job 逾時到點 / 人為按停 / concurrency 取代 → conclusion 是 `cancelled`;
+  # runner 起不來 / action tarball 下載失敗 / 環境配置失敗 → conclusion 是 `failure`,
+  # 但**第一個步驟都還沒開始**。這兩種收場 GitHub 都不會執行 job 裡的任何 step,
+  # 所以上面所有 `if: failure()` 的通知對它們完全免疫:這輪沒做完,而 owner
+  # 收不到任何訊息。step 層條件看不到 job 收場,只有 job 層的 needs.<job>.result
+  # 看得到,所以必須是獨立 job。
+  #
+  # ⚠️ 兩種收場都已實際發生過,這不是理論保險:
+  #   - cancelled:th-customs-scan 的 scan.yml 歷史裡有一次。
+  #   - failure(靜默):2026-09-07 盤點最近 1000 次排程,12 次失敗中有
+  #     **3 次死在 "Set up job"**,通知 step 根本不存在、owner 零訊息:
+  #     run 32903178662(2026-08-25,annotation 是「抓不到 kai-notify@v1 的 tarball」
+  #     —— 通知工具本身是 leg 的前置依賴,它掛了就把 drain 一起拖死)、
+  #     31778287952(voc + tbvoc 兩條 leg 同時)、31116483928。
+  #     原本只替 cancelled 接了這個出口,failure 留著同一個盲區。
+  #
+  # 註:drain 在步驟內失敗時,leg 內的「Notify Kai on failure」會送出帶真因的訊息,
+  # 本 job 會再送一則較粗的 —— 一次失敗兩則通知是刻意的取捨:寧可重複,不可靜默。
+  notify-broken:
     needs: drain
-    if: ${{ always() && needs.drain.result == 'cancelled' }}
+    if: ${{ always() && (needs.drain.result == 'failure' || needs.drain.result == 'cancelled') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Error annotation (API-blip resilient)
-        run: echo "::error::collector drain was CANCELLED (timeout or manual stop) - the run did not complete. Re-run needed."
+        run: echo "::error::collector drain 收場為 ${{ needs.drain.result }} —— 這輪抓片佇列沒排空,需要重跑。"
 
       - name: Report to Kai (kai-notify, fail-soft)
         uses: pei760730/kai-notify@v1
@@ -173,4 +186,4 @@ jobs:
           KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
           KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
         with:
-          text: "🟠 collector drain 被中止(逾時或人為按停)——這輪抓片佇列沒排空,需要重跑 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          text: "${{ needs.drain.result == 'cancelled' && '🟠 collector drain 被中止(逾時或人為按停)' || '🔴 collector drain 失敗(job 層警報:若沒收到帶錯誤細節的那則,代表 job 在第一個步驟開始前就死了)' }} —— 這輪抓片佇列沒排空,需要重跑 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
