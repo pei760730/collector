@@ -66,8 +66,11 @@ async function main(): Promise<DrainResult> {
   );
   sendGateAlert = gateAlerter.send;
   flushGateAlert = gateAlerter.flush;
-  bot.botInfo = await bot.telegram.getMe(); // handleUpdate 解析群組 /command@botname 需要
-  await bot.telegram.deleteWebhook({ drop_pending_updates: false }); // 清殘留 webhook,保留待領更新
+  // 包重試:整輪最早的網路 I/O,裸打時一次抖動就報銷整輪 drain 並發出假紅燈。
+  bot.botInfo = await callTelegramWithRetry("getMe", () => bot.telegram.getMe()); // handleUpdate 解析群組 /command@botname 需要
+  await callTelegramWithRetry("deleteWebhook", () =>
+    bot.telegram.deleteWebhook({ drop_pending_updates: false }),
+  ); // 清殘留 webhook,保留待領更新
 
   const result = await drainUpdates(bot, persist, "暫存區");
 

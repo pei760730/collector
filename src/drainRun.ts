@@ -35,9 +35,12 @@ export async function runDrain(
     target,
   );
   // handleUpdate 要 botInfo 才能正確解析群組內的 /command@botname;先抓好(launch 平時會做)。
-  bot.botInfo = await bot.telegram.getMe();
+  // 包重試:這是整輪最早的網路 I/O,裸打時一次 ECONNRESET 就報銷整輪 drain 並發出假紅燈。
+  bot.botInfo = await callTelegramWithRetry("getMe", () => bot.telegram.getMe());
   // 確保沒有殘留 webhook(否則 getUpdates 回 409 Conflict);保留待領更新不丟。
-  await bot.telegram.deleteWebhook({ drop_pending_updates: false });
+  await callTelegramWithRetry("deleteWebhook", () =>
+    bot.telegram.deleteWebhook({ drop_pending_updates: false }),
+  );
 
   const result = await drainUpdates(bot, persist, "參考池");
 
