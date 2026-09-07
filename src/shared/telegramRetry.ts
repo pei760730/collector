@@ -4,7 +4,23 @@ const DEFAULT_TRIES = 4;
 const BASE_DELAY_MS = 500;
 const MAX_DELAY_MS = 60_000;
 
-type TelegramMethod = "getUpdates" | "sendMessage";
+/**
+ * 會走本模組重試的 Telegram 方法。**型別由這個陣列推導**,不是各寫一份 —— 加方法時
+ * 下面的 IDEMPOTENT_METHODS 與測試的分類表都會因為 Record 的完整性檢查而編譯期報錯,
+ * 逼你明講「這支能不能安全重試」,不會靜默漏分類。
+ */
+export const TELEGRAM_METHODS = ["getUpdates", "getMe", "deleteWebhook", "sendMessage"] as const;
+export type TelegramMethod = (typeof TELEGRAM_METHODS)[number];
+
+/**
+ * 除了 429 之外,還能對 5xx / 傳輸層錯誤重試的方法 = 純讀或冪等的那些。
+ *
+ * sendMessage 刻意不在內:重試時無法確定上一次是否已送達,會送出重複訊息
+ * (tests/shared/telegramRetry.test.ts 有釘住這個刻意行為)。
+ * getMe 是純讀、deleteWebhook 是冪等,都不適用那個理由 —— 它們原本被排除只是因為
+ * 判斷式寫成 `method !== "getUpdates"`,不是有人決定過。
+ */
+const IDEMPOTENT_METHODS = new Set<TelegramMethod>(["getUpdates", "getMe", "deleteWebhook"]);
 
 interface RetryOptions {
   tries?: number;
@@ -42,7 +58,7 @@ function isTransportError(error: unknown): boolean {
 export function shouldRetryTelegram(method: TelegramMethod, error: unknown): boolean {
   const status = statusCode(error);
   if (status === 429) return true;
-  if (method !== "getUpdates") return false;
+  if (!IDEMPOTENT_METHODS.has(method)) return false;
   return (status !== undefined && status >= 500 && status < 600) || isTransportError(error);
 }
 

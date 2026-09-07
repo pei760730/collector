@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { callTelegramWithRetry } from "../../src/shared/telegramRetry.js";
+import {
+  callTelegramWithRetry,
+  shouldRetryTelegram,
+  TELEGRAM_METHODS,
+  type TelegramMethod,
+} from "../../src/shared/telegramRetry.js";
 
 function timeoutError(): Error & { code: string } {
   return Object.assign(new Error("request timed out"), { code: "ETIMEDOUT" });
@@ -52,4 +57,34 @@ describe("callTelegramWithRetry: 錯誤 × 方法", () => {
     ).rejects.toBe(clientError);
     expect(unauthorizedRead).toHaveBeenCalledTimes(1);
   });
+});
+
+/**
+ * 完整性釘子:每一支 TelegramMethod 的「5xx / 傳輸層錯誤能不能重試」都要被明講。
+ *
+ * 這張表的型別是 Record<TelegramMethod, boolean> —— 往 TELEGRAM_METHODS 加一支方法卻
+ * 沒在這裡分類,**編譯期就會紅**,不會靜默沿用某個預設。這條規則本身就是為了修掉
+ * 一個靜默漏分類:舊判斷式寫的是 `method !== "getUpdates"`,於是 getMe / deleteWebhook
+ * 被排除在重試之外 —— 不是有人決定過,是句型剛好把它們掃到門外。
+ */
+const RETRYABLE_BEYOND_429: Record<TelegramMethod, boolean> = {
+  getUpdates: true, // 純讀
+  getMe: true, // 純讀
+  deleteWebhook: true, // 冪等
+  sendMessage: false, // 刻意:重試可能送出重複訊息
+};
+
+describe("shouldRetryTelegram: 每支方法都要被明確分類", () => {
+  const serverError = Object.assign(new Error("Bad Gateway"), { code: 502 });
+  const transportError = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+
+  for (const method of TELEGRAM_METHODS) {
+    const want = RETRYABLE_BEYOND_429[method];
+    it(`${method}:5xx / 傳輸層 → ${want ? "重試" : "不重試"};429 一律重試`, () => {
+      expect(shouldRetryTelegram(method, serverError)).toBe(want);
+      expect(shouldRetryTelegram(method, transportError)).toBe(want);
+      // 429 是全體共通的例外(Telegram 明確告訴你稍後再打),與冪等性無關。
+      expect(shouldRetryTelegram(method, Object.assign(new Error("429"), { code: 429 }))).toBe(true);
+    });
+  }
 });
