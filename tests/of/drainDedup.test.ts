@@ -18,6 +18,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── 假 sheets client:依 range 分類 values.get(暫存區/總表 × 表頭/資料) ──
 const calls = { stagingHeaderGet: 0, stagingDataGet: 0, prodHeaderGet: 0, prodDataGet: 0, append: 0, metaGet: 0 };
 let stagingRows: string[][] = [];
+// 「寫入其實成功、但回應遺失」的次數(觸發 withRetry 的 alreadyDone 冪等護欄)。
+let lostAppendResponses = 0;
 
 const fakeSheets = {
   spreadsheets: {
@@ -48,6 +50,10 @@ const fakeSheets = {
       append: vi.fn(async ({ requestBody }: { requestBody: { values: string[][] } }) => {
         calls.append++;
         stagingRows.push(requestBody.values[0]!);
+        if (lostAppendResponses > 0) {
+          lostAppendResponses -= 1;
+          throw new Error("socket hang up"); // 寫成功…但回應遺失(isTransient → 重試前先問 alreadyDone)
+        }
         return { data: { updates: { updatedRange: `'暫存區'!A${stagingRows.length + 1}:E${stagingRows.length + 1}` } } };
       }),
       update: vi.fn(async () => ({ data: {} })),
@@ -85,6 +91,7 @@ beforeEach(() => {
   calls.append = 0;
   calls.metaGet = 0;
   stagingRows = [];
+  lostAppendResponses = 0;
 });
 
 describe("drain 單輪去重不 N+1(暫存區/總表 values.get 皆 O(1))", () => {
@@ -160,5 +167,24 @@ describe("drain 單輪去重不 N+1(暫存區/總表 values.get 皆 O(1))", () =
     expect(r2.reply).toContain("已經存在暫存區"); // 命中快取(含剛 append 的那筆)
     expect(calls.append).toBe(1); // 沒有重寫
     expect(calls.stagingDataGet).toBe(1); // 全程只讀一次暫存區全表
+  });
+
+  it("append 回應遺失(alreadyDone 命中)→ 同輪稍後同 VIDEO_ID 仍不得寫出第二列", async () => {
+    // 這一格是上一測涵蓋不到的另一半:上一測的假 client 每次 append 都回 updatedRange,
+    // 所以「併入快取」那條路永遠成功。真實世界還有一條:append 寫進去了但回應掉了
+    // (Premature close / socket hang up),withRetry 在 catch 裡問 alreadyDone、發現表上
+    // 已有這筆 → 回 undefined 當成功。此時拿不到 updatedRange,快取若沒跟著處理,
+    // 同輪稍後的同一支影片就會查到「還沒收過」而寫出第二列。
+    const storage = makeStorage();
+    const url = "https://www.tiktok.com/@u/video/7345678901";
+
+    lostAppendResponses = 1;
+    const r1 = await runIngest({ text: `${url} 第一次` }, { storage, expandShortUrls: false, now: FIXED });
+    expect(r1.error).toBeUndefined();
+    expect(stagingRows).toHaveLength(1); // 表上就是一列(冪等護欄擋掉了重打)
+
+    const r2 = await runIngest({ text: `${url} 又貼一次` }, { storage, expandShortUrls: false, now: FIXED });
+    expect(r2.reply).toContain("已經存在暫存區");
+    expect(stagingRows).toHaveLength(1); // 關鍵:不得長出第二列
   });
 });
