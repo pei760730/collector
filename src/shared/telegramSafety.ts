@@ -6,6 +6,35 @@
 import type { Context, Telegraf } from "telegraf";
 import { logger } from "@pei760730/collector-core";
 
+/**
+ * drain 用的 Telegraf 建構選項 —— 關掉 telegraf 的 handler 逾時牆。
+ *
+ * telegraf 的預設 `handlerTimeout` 是 90000ms,而那個預設會**靜默吃掉資料**:
+ * `handleUpdate` 用 pTimeout 包住 middleware,逾時錯誤交給 `handleError`(= 被我們
+ * 覆寫掉的 `bot.catch`)之後,`handleUpdate` 仍然**正常 resolve**
+ * (node_modules/telegraf/lib/telegraf.js:233-236)。
+ *
+ * telegraf 內建的預設 handleError 會 `process.exitCode = 1` 並 rethrow(telegraf.js:84-90);
+ * 兩支 router 都把它覆寫成「只記一行 log」,於是那兩個訊號一起消失。結果是:
+ * 單筆處理超過 90 秒 → drainLoop 看不到任何例外 → `persist.failed` 仍是 false →
+ * offset 前進 → 下一次 getUpdates 就把這筆 **ack 掉**,而那一列從來沒寫進表。
+ * job 綠燈、失敗通知不響、Step Summary 還寫「已處理 N 筆」。
+ * 這正是 drainLoop.ts 註解引用的 CLAUDE.md 紅線「絕不把沒寫成功的訊息默默 ack 掉」,
+ * 被一個沒人設定過的預設值繞過去(repo 從未出現過 handlerTimeout 這個字)。
+ *
+ * 真正該當 wall clock 的是 collect.yml 的 `timeout-minutes: 10`:逾時 → job cancelled →
+ * 這批 offset 從未回報給 Telegram → 下次 cron 整段重領 → 各 target 的去重吸收重複。
+ * 那條路是 at-least-once;90 秒這條是 at-most-once 而且無聲。
+ *
+ * Infinity 是 p-timeout 官方的停用值(node_modules/p-timeout/index.js:17-20 直接 resolve
+ * 原 promise),不是傳 0(0 會被當成「立刻逾時」)。
+ *
+ * ⚠️ 兩支 router 必須共用這一份。分兩處各寫各的,就是下一個「一邊修好、另一邊漂著」。
+ */
+export const DRAIN_SAFE_TELEGRAF_OPTIONS = {
+  handlerTimeout: Number.POSITIVE_INFINITY,
+};
+
 export interface TelegramSafetyConfig {
   /** 來源白名單。空名單只允許用於不寫真表的乾跑／開發模式。 */
   allowedChatIds: readonly number[];

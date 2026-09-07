@@ -17,6 +17,7 @@ import {
   createErrorNotifier,
   errText,
   installSourceAllowlist,
+  DRAIN_SAFE_TELEGRAF_OPTIONS,
 } from "../shared/telegramSafety.js";
 
 // ── 夯度 inline 按鈕(tbvoc;自 clip-collector 移植,值域改由 target.hotValues 注入)─────
@@ -49,7 +50,7 @@ export function createBot(
   // 預設 voc:既有呼叫端/測試零改動。生產由 drain 依 config.target 傳入。
   target: TargetSpec = VOC_TARGET,
 ): Telegraf {
-  const bot = new Telegraf(config.telegramToken);
+  const bot = new Telegraf(config.telegramToken, DRAIN_SAFE_TELEGRAF_OPTIONS);
 
   // 必須先於所有業務 handler，讓 polling 與 drain(handleUpdate)共用同一個來源 guard。
   installSourceAllowlist(bot, config);
