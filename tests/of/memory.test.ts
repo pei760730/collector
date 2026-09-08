@@ -39,9 +39,9 @@ describe("of MemoryStorage", () => {
     expect(await storage.findApprovedByUrl("   ")).toBe(false);
     expect(await storage.findApprovedByUrl("https://youtu.be/missing")).toBe(false);
 
-    const urls = await storage.approvedUrlSet();
+    const urls = await storage.approvedKeySet();
     urls.clear();
-    expect((await storage.approvedUrlSet()).size).toBe(1);
+    expect((await storage.approvedKeySet()).size).toBe(1);
   });
 
   it("總表 URL 欄不可用時 fail-soft 回空集合", async () => {
@@ -50,7 +50,7 @@ describe("of MemoryStorage", () => {
       approvedUrlColumnAvailable: false,
     });
 
-    expect(await storage.approvedUrlSet()).toEqual(new Set());
+    expect(await storage.approvedKeySet()).toEqual(new Set());
     expect(await storage.findApprovedByUrl("https://youtu.be/abc")).toBe(false);
   });
 

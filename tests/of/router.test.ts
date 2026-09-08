@@ -139,7 +139,7 @@ describe("router onPersistError 透传(#1 drain 靠它停在 offset)", () => {
       findByVideoId: async () => null,
       videoIdIndex: async () => new Map(),
       findApprovedByUrl: async () => false,
-      approvedUrlSet: async () => new Set(),
+      approvedKeySet: async () => new Set(),
       stats: async () => ({
         total: 0,
         byPlatform: {},

@@ -37,20 +37,22 @@ export interface Storage {
   videoIdIndex(): Promise<Map<string, DuplicateHit>>;
 
   /**
-   * 用 CLEAN_URL 完全比對總表(已產出/待拍池)是否已有這支片。
-   * 回 true 表示已存在於總表,收集端不可再 append 回暫存區。
-   * 實作應 trim cleanUrl 與儲存值;空字串視為無命中。
+   * 比對總表(已產出/待拍池)是否已有這支片。比的是 `approvedGateKey`
+   * (= groupKey ∘ cleanUrl),**不是** CLEAN_URL 字串 —— 同一支片換分享形態
+   * (youtu.be ↔ watch?v= ↔ shorts)或帶沒收錄過的新分享參數都算同一支。
+   * 回 true 表示已存在於總表,收集端不可再 append 回暫存區。空字串視為無命中。
    */
   findApprovedByUrl(cleanUrl: string): Promise<boolean>;
 
   /**
-   * 總表(已產出/待拍池)已收錄 URL 的集合,值為 core cleanUrl 正規化後的字串。
+   * 總表(已產出/待拍池)已收錄「閘門鍵」的集合,值為 `approvedGateKey` 的輸出
+   * (= groupKey ∘ cleanUrl),不是原始 URL。
    * 單輪 drain 只讀一次總表 URL 欄建集合後快取,之後查 in-memory(O(1)),取代逐訊息
    * findApprovedByUrl 的「讀表頭 + 讀整欄」兩次全欄讀。
    * fail-soft:讀不到總表 / 找不到 URL 欄時回空 Set(照常收錄)並觸發 onGateSkip;
    * 失敗不快取(下一筆可再試)。
    */
-  approvedUrlSet(): Promise<Set<string>>;
+  approvedKeySet(): Promise<Set<string>>;
 
   /** append 一列。 */
   append(row: StagingRow): Promise<void>;
