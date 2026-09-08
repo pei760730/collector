@@ -3,7 +3,7 @@
  *
  * 修法(finding: drain-n1-full-table-read-per-message):ingest 去重改查 storage 實例的
  * in-memory 索引 —— `videoIdIndex()`(暫存區,單輪只讀一次全表建好,append 成功併入新 key)
- * 與 `approvedUrlSet()`(總表 URL 欄,單輪只讀一次)。本測 mock googleapis,數
+ * 與 `approvedKeySet()`(總表 URL 欄,單輪只讀一次)。本測 mock googleapis,數
  * `spreadsheets.values.get` 被呼叫次數:一輪 N 筆收錄,暫存區資料讀 / 總表表頭讀 / 總表資料讀
  * 都應是 O(1)(各一次),而非 O(N)。
  *

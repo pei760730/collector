@@ -18,6 +18,7 @@ import {
 import { extractVideoId } from "../../pipeline/extractVideoId.js";
 import { todayTaipei } from "../../utils/date.js";
 import { STATUS, type StagingRow } from "../../types.js";
+import { approvedGateKey } from "../../storage/approvedKey.js";
 import type { Storage } from "../../storage/Storage.js";
 import { logger } from "../../utils/logger.js";
 import {
@@ -109,9 +110,10 @@ export async function runIngest(
       const hit = (await deps.storage.videoIdIndex()).get(ex.videoId.trim());
       if (hit) return { reply: duplicateMsg(hit.row) };
 
-      // normKey 已是 core cleanUrl 輸出(row.CLEAN_URL 來自上面的 cleanUrl(rawUrl));
-      // approvedUrlSet 內值同樣過 core cleanUrl,兩側對齊。
-      if ((await deps.storage.approvedUrlSet()).has(row.CLEAN_URL)) {
+      // 閘門鍵兩側都走 approvedGateKey(= groupKey ∘ cleanUrl):同一支片換分享形態
+      // (youtu.be ↔ watch?v=)或帶沒收錄過的新分享參數,都算同一把鍵、擋得住。
+      // 這裡一定抽得到 id(在 !ex.unsupported 分支內),所以鍵是 `平台_id` 不是路徑 fallback。
+      if ((await deps.storage.approvedKeySet()).has(approvedGateKey(row.CLEAN_URL))) {
         return { reply: approvedDuplicateMsg(row.CLEAN_URL) };
       }
     } else {

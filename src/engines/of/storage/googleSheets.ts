@@ -15,7 +15,6 @@ import { google, type sheets_v4 } from "googleapis";
 // feed 只留自家 schema 常數(STAGING_COLUMNS / 總表 URL 欄名)。
 import {
   withRetry,
-  cleanUrl as coreCleanUrl,
   colLetter,
   resolveHeaderIndexes,
   placeRow,
@@ -23,6 +22,7 @@ import {
   type HeaderLayout,
   type GoogleServiceAccountCredentials,
 } from "@pei760730/collector-core";
+import { approvedGateKey } from "./approvedKey.js";
 import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
 import type { StagingRow } from "../types.js";
 import { STAGING_COLUMNS } from "../types.js";
@@ -181,13 +181,14 @@ export class GoogleSheetsStorage implements Storage {
   }
 
   /**
-   * 總表已收錄 URL 集合:第一次讀總表 URL 欄建 Set(讀表頭 + 讀整欄),之後回快取(O(1))。
-   * 值為 core cleanUrl 正規化後字串——抗規則漂移:歷史列是「當年的清理規則」寫的,規則升級後
-   * 同連結字串可能不同 → 存入前兩側都過現行 core cleanUrl(冪等:已乾淨的不變),舊列不漏擋。
+   * 總表已收錄「閘門鍵」集合:第一次讀總表 URL 欄建 Set(讀表頭 + 讀整欄),之後回快取(O(1))。
+   * 值為 approvedGateKey(= groupKey ∘ cleanUrl)——抗規則漂移**與參數/形態漂移**:歷史列是
+   * 「當年的清理規則」寫的、還可能帶當年的分享參數或另一種分享形態(youtu.be vs watch?v=),
+   * 字串比對會漏擋;改比 groupKey 之後同一支片永遠同一把鍵。建集合與查詢兩側走同一支函式。
    * fail-soft:讀不到總表 / 找不到 URL 欄 → 回空 Set(照常收錄)並觸發 onGateSkip;
    * 失敗「不快取」(清掉才回),讓下一筆可再試(維持「gate 掛了也不放棄」的降級)。
    */
-  async approvedUrlSet(): Promise<Set<string>> {
+  async approvedKeySet(): Promise<Set<string>> {
     if (this.approvedCache) return this.approvedCache;
 
     let header: string[];
@@ -225,7 +226,8 @@ export class GoogleSheetsStorage implements Storage {
       for (const row of values) {
         const raw = String(row?.[0] ?? "").trim();
         if (!raw) continue;
-        set.add(coreCleanUrl(raw).cleanUrl);
+        // raw 已由上面 `if (!raw) continue` 保證非空 → 算出的鍵必非空,不需再判一次。
+        set.add(approvedGateKey(raw));
       }
       this.approvedCache = set;
       return set;
@@ -239,8 +241,7 @@ export class GoogleSheetsStorage implements Storage {
   async findApprovedByUrl(cleanUrl: string): Promise<boolean> {
     const key = cleanUrl.trim();
     if (!key) return false;
-    const normKey = coreCleanUrl(key).cleanUrl;
-    return (await this.approvedUrlSet()).has(normKey);
+    return (await this.approvedKeySet()).has(approvedGateKey(key));
   }
 
   async stats(opts: { recentLimit: number; nowMs: number }): Promise<StatsSummary> {
