@@ -26,7 +26,8 @@ import { cleanUrl as coreCleanUrl, groupKey } from "@pei760730/collector-core";
  * 冪等:已經是乾淨連結的輸入不會被改壞(cleanUrl 冪等,groupKey 純函式)。
  */
 export function approvedGateKey(url: string): string {
-  const trimmed = (url ?? "").trim();
+  const trimmed = url.trim();
+  // 介面契約:空字串視為無命中(呼叫端拿空鍵去查集合也永遠不會中,但早退比較誠實)。
   if (!trimmed) return "";
   return groupKey(coreCleanUrl(trimmed).cleanUrl);
 }

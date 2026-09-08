@@ -226,8 +226,8 @@ export class GoogleSheetsStorage implements Storage {
       for (const row of values) {
         const raw = String(row?.[0] ?? "").trim();
         if (!raw) continue;
-        const key = approvedGateKey(raw);
-        if (key) set.add(key);
+        // raw 已由上面 `if (!raw) continue` 保證非空 → 算出的鍵必非空,不需再判一次。
+        set.add(approvedGateKey(raw));
       }
       this.approvedCache = set;
       return set;
