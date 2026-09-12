@@ -48,7 +48,7 @@
 
 - 使用者 **Pei**([pei760730](https://github.com/pei760730)),回覆繁體中文、短句直接。
 - 技術棧已定案:Node.js + TypeScript、telegraf、googleapis、dayjs、vitest。儲存 Google Sheets。
-- **部署:GitHub Actions cron drain($0,預設)** —— `.github/workflows/collect.yml` 設 `*/5` 跑 `npm run drain`(`src/drain.ts`:`getUpdates` 撈乾→`handleUpdate`→ack→結束),但 GitHub 對 public repo 高頻排程大幅節流,**實際約每 2–3h 觸發一次**。Telegram 留更新 ~24h,間隔遠 < 24h 不漏;每次 run 撈乾全部 pending,漏跑自癒。**不要在本機 Docker/WSL2 跑常駐**:連 googleapis 帶 JWT 大封包會 `Premature close`(WSL2 MTU 丟大封包)。Docker/webhook 部署線已於 2026-07-03 解散(生產走 cron drain 數月、常駐線從未上場);`npm run dev` = 本機 long polling,僅開發用。
+- **部署:GitHub Actions cron drain($0,預設)** —— `.github/workflows/collect.yml` 設 `*/5` 跑 `npm run drain`(`src/drain.ts`:`getUpdates` 撈乾→`handleUpdate`→ack→結束),但 GitHub 對 public repo 高頻排程大幅節流,**實際到班率遠低於申請值,且會隨 repo 變安靜繼續往下**——數字的唯一正本在 `collect.yml` 的 schedule 註解(含重量指令),本檔不複述、以免兩處對不上(2026-09-08 就發生過:#112 更新了 workflow、漏了這裡)。Telegram 留更新 ~24h,只要**最長間隔** < 24h 就不漏;每次 run 撈乾全部 pending,漏跑自癒。**不要在本機 Docker/WSL2 跑常駐**:連 googleapis 帶 JWT 大封包會 `Premature close`(WSL2 MTU 丟大封包)。Docker/webhook 部署線已於 2026-07-03 解散(生產走 cron drain 數月、常駐線從未上場);`npm run dev` = 本機 long polling,僅開發用。
 - 開發指令:`npm run dev`(tsx watch)、`npm test`、`npm run typecheck`、`npm run build`。
 
 ## 第五層:待確認(邊做邊修)
