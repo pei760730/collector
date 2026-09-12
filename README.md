@@ -13,7 +13,7 @@ Telegram 收集 bot(原 short-video-bot,2026-07-15 三併一改名)。一套殼�
 
 ## 部署
 
-GitHub Actions cron drain(`.github/workflows/collect.yml`):matrix 併行跑四個 target,把 Telegram 囤積的更新撈乾、寫入後結束,無常駐機。secrets 採 per-target 前綴(voc 無前綴、`TBVOC_`、`OF_`、`OFGAY_`),缺任一支紅燈、五支全空視為未接線跳過(ofgay 現況即為此:休眠待接線)。
+GitHub Actions cron drain(`.github/workflows/collect.yml`):matrix 併行跑四個 target,把 Telegram 囤積的更新撈乾、寫入後結束,無常駐機。secrets 採 per-target 前綴(voc 無前綴、`TBVOC_`、`OF_`、`OFGAY_`),缺任一支紅燈、五支全空視為未接線跳過(目前四個 target **全部已接線並在收**;2026-09-12 實測每個 job 都印出 `drain 完成:已處理 N 筆更新`)。
 
 ## 開發
 
