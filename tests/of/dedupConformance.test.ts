@@ -18,6 +18,8 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { groupKey } from "@pei760730/collector-core";
+
 import { extractVideoId } from "../../src/engines/of/pipeline/extractVideoId.js";
 
 interface DedupVectors {
@@ -36,18 +38,12 @@ const vectors: DedupVectors = JSON.parse(readFileSync(_vectorsPath, "utf8"));
 const FIXED = () => 1_700_000_000_000; // 固定時戳:讓 unsupported 的 raw_<ts> 在同組內可比較
 
 /**
- * canonical 的「連結路徑 key」退路,逐字對齊 core groupKey 的 fallback
- * (砍 query/fragment → 去尾斜線 → lower)。**必須逐網址不同** —— 見下方 feedKey。
- */
-const pathKey = (url: string): string =>
-  (url ?? "")
-    .trim()
-    .replace(/[?#].*$/, "")
-    .replace(/\/+$/, "")
-    .toLowerCase();
-
-/**
- * feed 去重身分:抽得到 → videoId(帶平台前綴);抽不到(unsupported)→ `PATH:<路徑>`。
+ * feed 去重身分:抽得到 → videoId(帶平台前綴);抽不到(unsupported)→ `PATH:<canonical key>`。
+ *
+ * 退路值**直接向 canonical 取**(core 的 `groupKey`),不手抄它的公式。2026-09-13 突變實證:
+ * 把 core 的退路改成常數(足以毀掉所有路徑分群),手抄版本這支 22/22 全綠、毫無反應
+ * (對照組 approvedGate 同時紅,證明突變真的生效)—— 那份手抄是個靜默漏洞:
+ * core 改退路時它會繼續綠著,而它存在的唯一理由就是抓這種分叉。
  *
  * unsupported 這側**不能壓成單一常數**:canonical 對抽不到 id 的連結是退「逐網址不同的
  * 路徑 key」,壓成常數會讓兩個 canonical 上互不相同、但 feed 側都抽不到 id 的網址塌成
@@ -58,7 +54,7 @@ const pathKey = (url: string): string =>
  */
 const feedKey = (url: string): string => {
   const r = extractVideoId(url, FIXED);
-  return r.unsupported ? `PATH:${pathKey(url)}` : r.videoId;
+  return r.unsupported ? `PATH:${groupKey(url)}` : r.videoId;
 };
 
 // 2026-07-06 feed 已接抖音(extractVideoId 映 dy_),抖音向量不再 skip、實跑守門。
@@ -87,6 +83,31 @@ describe("voc 去重契約(feed 模型):edge_cases id/path(path ⟺ feed unsuppo
     it(`「${e.name}」→ ${e.expect}`, () => {
       const got = feedKey(e.url).startsWith("PATH:") ? "path" : "id";
       expect(got).toBe(e.expect);
+    });
+  }
+});
+
+/**
+ * 把檔頭那句散文前提升成斷言:**feed 的 `unsupported` ⟹ canonical 也退路徑 key**。
+ *
+ * 這是 `PATH:` 這個標籤誠實的前提,也是 edge_cases 那組翻譯成立的前提 —— 原本只有
+ * edge_cases 的少數幾條在守,現在對每一條向量網址都守。路徑型 key 以 `http` 開頭,
+ * id 型永遠不會(`fb_…`/`tiktok_…`),所以這個前綴就是判準。
+ */
+describe("模型翻譯前提:feed unsupported ⟹ canonical 也退路徑 key", () => {
+  const urls = [
+    ...vectors.same_group.flatMap((g) => g.urls),
+    ...vectors.distinct.flatMap((g) => g.urls),
+    ...vectors.edge_cases.map((e) => e.url),
+  ].filter((u) => extractVideoId(u, FIXED).unsupported);
+
+  it("向量裡真的有 unsupported 網址可守(否則這組是空的假守門)", () => {
+    expect(urls.length).toBeGreaterThan(0);
+  });
+
+  for (const u of urls) {
+    it(`「${u}」`, () => {
+      expect(groupKey(u)).toMatch(/^http/);
     });
   }
 });
