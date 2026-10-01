@@ -20,14 +20,14 @@
   "dependencies": {
     "@pei760730/collector-core": "github:pei760730/collector-core#v0.6.1",
     "dayjs": "^1.11.23",
-    "dotenv": "^17.4.2",
-    "googleapis": "^178.0.0",
+    "dotenv": "^18.0.3",
+    "googleapis": "^181.0.0",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
+    "@types/node": "^22.20.4",
     "@vitest/coverage-v8": "^5.0.0",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
   },
