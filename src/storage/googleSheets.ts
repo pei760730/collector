@@ -189,7 +189,7 @@ export class GoogleSheetsStorage implements Storage {
     const { key } = await appendWithIdempotencyGuard({
       row,
       keyOf: (candidate) => dedupKey(candidate.連結),
-      // 必須 fresh 讀參考池，不能用 dedupCache 的凍結快照；共用 helper 只快取本次重試窗。
+      // 每次重試前 fresh 讀參考池，不能用 dedupCache 或前次 append 嘗試後的快照。
       fetchFreshKeys: () =>
         this.readRows().then((hits) => new Set(hits.map((h) => dedupKey(h.row.連結)))),
       append: () =>

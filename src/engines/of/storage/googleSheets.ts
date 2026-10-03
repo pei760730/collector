@@ -273,7 +273,7 @@ export class GoogleSheetsStorage implements Storage {
     const { key: videoId, result: res } = await appendWithIdempotencyGuard({
       row,
       keyOf: (candidate) => candidate.VIDEO_ID.trim(),
-      // 必須 fresh 讀暫存區，不能用 videoIdCache 的凍結快照；共用 helper 只快取本次重試窗。
+      // 每次重試前 fresh 讀暫存區，不能用 videoIdCache 或前次 append 嘗試後的快照。
       fetchFreshKeys: () => this.freshVideoIds(layout),
       append: () =>
         this.sheets.spreadsheets.values.append({

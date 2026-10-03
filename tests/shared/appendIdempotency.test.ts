@@ -1,8 +1,8 @@
 /**
  * shell/of 共用 append 冪等護欄的整合契約。
  *
- * 同一組案例各跑兩個 storage adapter，確認兩 target 都保留三態：fresh 查詢成功只讀一次、
- * 查到已落表提早收手、查詢失敗不快取；另釘住空 dedupKey/VIDEO_ID 時退回原重試行為。
+ * 同一組案例各跑兩個 storage adapter：每次重打前 fresh 查詢、已落表提早收手、
+ * 查詢失敗不快取；另釘住空 dedupKey/VIDEO_ID 時退回原重試行為。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HeaderLayout } from "@pei760730/collector-core";
@@ -152,7 +152,7 @@ afterEach(() => {
 });
 
 describe.each(TARGETS)("$name append 冪等護欄", ({ create }) => {
-  it("fresh 查詢成功 → 整個重試窗只讀一次", async () => {
+  it("fresh 查詢成功但未落表 → 每次重打前各讀一次", async () => {
     let attempts = 0;
     const harness = create(async () => {
       attempts += 1;
@@ -163,7 +163,7 @@ describe.each(TARGETS)("$name append 冪等護欄", ({ create }) => {
     await settleRetries(harness.run);
 
     expect(harness.appendCalls()).toBe(3);
-    expect(harness.guardReadCalls()).toBe(1);
+    expect(harness.guardReadCalls()).toBe(2);
   });
 
   it("server 已提交但回應遺失 → fresh key 命中後提早收手，不產生重複列", async () => {
@@ -179,6 +179,24 @@ describe.each(TARGETS)("$name append 冪等護欄", ({ create }) => {
     expect(harness.appendCalls()).toBe(1);
     expect(harness.guardReadCalls()).toBe(1);
     expect(committedRows).toBe(1);
+  });
+
+  it("先未提交、後提交但回應遺失 → 不得重用先前的空集合雙寫", async () => {
+    let attempts = 0;
+    let committedRows = 0;
+    const harness = create(async () => {
+      attempts += 1;
+      if (attempts === 1) throw rateLimit();
+      committedRows += 1;
+      if (attempts === 2) throw new Error("socket hang up");
+      return appendSuccess();
+    }, async () => committedRows > 0);
+
+    await settleRetries(harness.run);
+
+    expect(committedRows).toBe(1);
+    expect(harness.appendCalls()).toBe(2);
+    expect(harness.guardReadCalls()).toBe(2);
   });
 
   it("fresh 查詢失敗 → 不快取失敗，下一次重試再查", async () => {
@@ -211,7 +229,7 @@ describe.each(TARGETS)("$name append 冪等護欄", ({ create }) => {
     expect(harness.guardReadCalls()).toBe(0);
   });
 
-  it("每次 append 各自持有 fresh key cache，不與同 instance 下一次 append 串味", async () => {
+  it("同 instance 下一次 append 仍在每次重打前 fresh 查詢", async () => {
     let attempts = 0;
     const harness = create(async () => {
       attempts += 1;
@@ -223,6 +241,6 @@ describe.each(TARGETS)("$name append 冪等護欄", ({ create }) => {
     await settleRetries(harness.run);
 
     expect(harness.appendCalls()).toBe(6);
-    expect(harness.guardReadCalls()).toBe(2);
+    expect(harness.guardReadCalls()).toBe(4);
   });
 });
