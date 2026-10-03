@@ -127,16 +127,8 @@ export async function runIngest(
       //     至少帶新 DATE(「又被分享了」的訊號),保住「每貼必留一列」的跨日語意。
       //     代價:跨午夜的重領護欄失手 → 多一列重複給人工看(可見、可刪,比擋掉跨日重貼
       //     的靜默丟失好)。
-      for (const hit of (await deps.storage.videoIdIndex()).values()) {
-        const existing = hit.row;
-        if (
-          existing.VIDEO_ID.startsWith("raw_") &&
-          existing.CLEAN_URL.trim() === row.CLEAN_URL &&
-          existing.DATE === row.DATE
-        ) {
-          return { reply: duplicateMsg(existing) };
-        }
-      }
+      const hit = await deps.storage.findRawReplay(row.CLEAN_URL, row.DATE);
+      if (hit) return { reply: duplicateMsg(hit.row) };
     }
 
     try {
