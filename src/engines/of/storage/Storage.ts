@@ -36,6 +36,9 @@ export interface Storage {
    */
   videoIdIndex(): Promise<Map<string, DuplicateHit>>;
 
+  /** 同日 raw replay：保留所有候選，依既有 CLEAN_URL(trim) / DATE 精確比對。 */
+  findRawReplay(cleanUrl: string, date: string): Promise<DuplicateHit | null>;
+
   /**
    * 比對總表(已產出/待拍池)是否已有這支片。比的是 `approvedGateKey`
    * (= groupKey ∘ cleanUrl),**不是** CLEAN_URL 字串 —— 同一支片換分享形態

@@ -6,6 +6,7 @@ import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
 import type { StagingRow } from "../types.js";
 import { STAGING_COLUMNS } from "../types.js";
 import { computeStats } from "./computeStats.js";
+import { isRawReplay } from "./rawReplay.js";
 
 export interface MemoryStorageOptions {
   approvedUrls?: Iterable<string>;
@@ -48,6 +49,11 @@ export class MemoryStorage implements Storage {
     const key = videoId.trim();
     if (!key) return null; // 空 key 不去重
     return (await this.videoIdIndex()).get(key) ?? null;
+  }
+
+  async findRawReplay(cleanUrl: string, date: string): Promise<DuplicateHit | null> {
+    const i = this.rows.findIndex((row) => isRawReplay(row, cleanUrl, date));
+    return i < 0 ? null : { row: this.rows[i]!, rowNumber: i + 2 };
   }
 
   async approvedKeySet(): Promise<Set<string>> {

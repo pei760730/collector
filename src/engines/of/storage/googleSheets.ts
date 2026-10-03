@@ -27,6 +27,7 @@ import type { Storage, DuplicateHit, StatsSummary } from "./Storage.js";
 import type { StagingRow } from "../types.js";
 import { STAGING_COLUMNS } from "../types.js";
 import { computeStats } from "./computeStats.js";
+import { isRawReplay } from "./rawReplay.js";
 import { logger } from "../utils/logger.js";
 import { appendWithIdempotencyGuard } from "../../../shared/appendIdempotency.js";
 
@@ -57,6 +58,7 @@ export class GoogleSheetsStorage implements Storage {
   private layoutCache?: HeaderLayout;
   // 單輪 drain 的去重索引/總表集合快取(每實例一份;drain 每輪新建實例)。
   private videoIdCache?: Map<string, DuplicateHit>;
+  private rawReplayCache?: DuplicateHit[];
   private approvedCache?: Set<string>;
 
   constructor(opts: GoogleSheetsOptions) {
@@ -161,17 +163,34 @@ export class GoogleSheetsStorage implements Storage {
    * 空 VIDEO_ID 不索引(對齊 findByVideoId「空 key 不去重」);同 key 保留首筆(列號最小)。
    */
   async videoIdIndex(): Promise<Map<string, DuplicateHit>> {
-    if (this.videoIdCache) return this.videoIdCache;
+    await this.loadStagingIndexes();
+    return this.videoIdCache!;
+  }
+
+  private async loadStagingIndexes(): Promise<void> {
+    if (this.videoIdCache && this.rawReplayCache) return;
     const layout = await this.layout();
     const index = new Map<string, DuplicateHit>();
+    const rawCandidates: DuplicateHit[] = [];
     for (const { rowNumber, cells } of await this.rawRows(layout)) {
       const row = readNamedRow(cells, STAGING_COLUMNS, layout) as unknown as StagingRow;
       const key = row.VIDEO_ID.trim();
       if (!key) continue;
       if (!index.has(key)) index.set(key, { row, rowNumber });
+      if (row.VIDEO_ID.startsWith("raw_")) rawCandidates.push({ row, rowNumber });
     }
     this.videoIdCache = index;
-    return index;
+    this.rawReplayCache = rawCandidates;
+  }
+
+  async findRawReplay(cleanUrl: string, date: string): Promise<DuplicateHit | null> {
+    await this.loadStagingIndexes();
+    return this.rawReplayCache!.find(({ row }) => isRawReplay(row, cleanUrl, date)) ?? null;
+  }
+
+  private invalidateStagingIndexes(): void {
+    this.videoIdCache = undefined;
+    this.rawReplayCache = undefined;
   }
 
   async findByVideoId(videoId: string): Promise<DuplicateHit | null> {
@@ -252,11 +271,13 @@ export class GoogleSheetsStorage implements Storage {
     return computeStats(rows, opts);
   }
 
-  /** 讀「當前」暫存區既有 VIDEO_ID 集合(fresh 全表讀,非快照)。append 冪等護欄用。 */
-  private async freshVideoIds(layout: HeaderLayout): Promise<Set<string>> {
+  /** 每次重試重新讀；raw 候選需同時證明既有精確 URL / DATE 條件。 */
+  private async freshAppendKeys(layout: HeaderLayout, candidate: StagingRow): Promise<Set<string>> {
     const set = new Set<string>();
     for (const { cells } of await this.rawRows(layout)) {
-      const id = (readNamedRow(cells, STAGING_COLUMNS, layout) as unknown as StagingRow).VIDEO_ID.trim();
+      const existing = readNamedRow(cells, STAGING_COLUMNS, layout) as unknown as StagingRow;
+      if (candidate.VIDEO_ID.startsWith("raw_") && !isRawReplay(existing, candidate.CLEAN_URL, candidate.DATE)) continue;
+      const id = existing.VIDEO_ID.trim();
       if (id) set.add(id);
     }
     return set;
@@ -264,46 +285,43 @@ export class GoogleSheetsStorage implements Storage {
 
   async append(row: StagingRow): Promise<void> {
     const layout = await this.layout();
-    // 冪等護欄:append 是本 storage 唯一「非冪等」寫入。若寫入 server 端已提交但回應遺失
-    // (isTransient:'Premature close' / ECONNRESET…),withRetry 會重打 → 永久重複列。
-    // 重試前先問 alreadyDone:這 VIDEO_ID 是否已在表上(fresh 讀、非凍結快照);已落地就
-    // 視為完成、不重打。VIDEO_ID 涵蓋 raw_*(raw_<ts> 在 extract 階段即固定、本次 append 內不變)。
-    // 唯一無法護欄的情形 = VIDEO_ID 為空(無穩定鍵):此時查不到、照常重試(退回原行為)。
-    //
-    const { key: videoId, result: res } = await appendWithIdempotencyGuard({
-      row,
-      keyOf: (candidate) => candidate.VIDEO_ID.trim(),
-      // 每次重試前 fresh 讀暫存區，不能用 videoIdCache 或前次 append 嘗試後的快照。
-      fetchFreshKeys: () => this.freshVideoIds(layout),
-      append: () =>
-        this.sheets.spreadsheets.values.append({
-          spreadsheetId: this.sheetId,
-          range: this.range(`A1:${colLetter(layout.width - 1)}`),
-          valueInputOption: "RAW",
-          insertDataOption: "INSERT_ROWS",
-          requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, STAGING_COLUMNS, layout)] },
-        }),
-    });
-    // 寫入成功 → 併入去重快取,讓同輪稍後的重複 VIDEO_ID 不必重讀全表也擋得到。
-    //
-    // alreadyDone 命中(上次寫成功但回應遺失)時 withRetry 回 undefined、拿不到 updatedRange。
-    // 更早的版本會落 rowNumber=0(假列號)併進快取,污染 DuplicateHit 的 1-based 契約;
-    // 接著改成「解析不到真實列號就不併」,而理由寫的是「同輪稍後的重複會被 append 護欄的
-    // fresh 讀再擋一次(不雙寫)」——**那個理由是錯的**:fresh 讀只掛在 withRetry 的
-    // alreadyDone 上,而 alreadyDone 只在 catch 區塊裡跑(見 core dist/utils/retry.js)。
-    // 第二筆如果第一次 append 就成功,永遠不會問它 → 同一支影片寫出第二列。
-    //
-    // 兩個要求同時滿足的做法 = 拿不到真實列號就「作廢整份快取」:下次 videoIdIndex()
-    // 重讀全表拿到真列號,既不放假列號進契約,也不漏掉同輪重複。代價是罕見路徑多一次全表讀。
-    // 情境已由 tests/of/drainDedup.test.ts 的「append 回應遺失」那格釘住。
-    //
-    // (voc/tbvoc 殼沒有這個洞:src/storage/googleSheets.ts 是無條件 set,因為它的
-    //  dedupCache 存的是 row 而非列號,不存在假列號問題 —— 這個不對稱是意外不是設計。)
-    if (videoId && this.videoIdCache && !this.videoIdCache.has(videoId)) {
-      const a1 = (res?.data?.updates?.updatedRange ?? "").split("!").pop() ?? "";
+    // VIDEO_ID 保持原值；raw 重試另驗證 URL / DATE，不能把碰撞 ID 的無關列當作落地證明。
+    let appended: { data: sheets_v4.Schema$AppendValuesResponse } | undefined;
+    let videoId: string;
+    try {
+      const guarded = await appendWithIdempotencyGuard({
+        row,
+        keyOf: (candidate) => candidate.VIDEO_ID.trim(),
+        fetchFreshKeys: () => this.freshAppendKeys(layout, row),
+        append: () =>
+          this.sheets.spreadsheets.values.append({
+            spreadsheetId: this.sheetId,
+            range: this.range(`A1:${colLetter(layout.width - 1)}`),
+            valueInputOption: "RAW",
+            insertDataOption: "INSERT_ROWS",
+            requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, STAGING_COLUMNS, layout)] },
+          }),
+      });
+      videoId = guarded.key;
+      appended = guarded.result;
+    } catch (err) {
+      // 最後一次嘗試仍可能已提交；下筆 raw replay 必須重讀，error / ack 規則不變。
+      if (row.VIDEO_ID.startsWith("raw_")) this.invalidateStagingIndexes();
+      throw err;
+    }
+
+    if (videoId && this.videoIdCache && (!this.videoIdCache.has(videoId) || row.VIDEO_ID.startsWith("raw_"))) {
+      const a1 = (appended?.data?.updates?.updatedRange ?? "").split("!").pop() ?? "";
       const m = a1.match(/\d+/);
-      if (m) this.videoIdCache.set(videoId, { row, rowNumber: Number(m[0]) });
-      else this.videoIdCache = undefined; // 作廢 → 下次 videoIdIndex() 重讀全表
+      // 拿不到真列號（含 lost-response guard 命中）就作廢兩份快取，不製造 rowNumber=0。
+      if (!m) {
+        this.invalidateStagingIndexes();
+        return;
+      }
+      const hit = { row, rowNumber: Number(m[0]) };
+      if (!this.videoIdCache.has(videoId)) this.videoIdCache.set(videoId, hit);
+      // 保留 first-hit map，同 ID 的不同 raw 候選仍需更新到 replay 視圖。
+      if (row.VIDEO_ID.startsWith("raw_")) this.rawReplayCache!.push(hit);
     }
   }
 }
