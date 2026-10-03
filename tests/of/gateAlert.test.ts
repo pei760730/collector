@@ -48,6 +48,35 @@ describe("findApprovedByUrl gate 失效告警", () => {
     expect(onGateSkip).toHaveBeenCalledWith(expect.stringContaining("找不到「影片連結」欄"));
   });
 
+  it.each([
+    ["同名", ["影片連結", "影片連結"]],
+    ["trim 後同名", [" 影片連結 ", "影片連結"]],
+  ])("表頭%s重複:告警、不讀任一資料欄、不快取,修正後恢復 gate", async (_kind, duplicateHeader) => {
+    const url = "https://youtu.be/dQw4w9WgXcQ";
+    const onGateSkip = vi.fn();
+    let header = duplicateHeader;
+    const get = vi.fn(async (req: { range: string }) => ({
+      data: { values: req.range.includes("1:1") ? [header] : [[url]] },
+    }));
+    const storage = makeStorage(get, onGateSkip);
+
+    await expect(storage.findApprovedByUrl(url)).resolves.toBe(false);
+    expect(onGateSkip).toHaveBeenCalledTimes(1);
+    expect(onGateSkip).toHaveBeenCalledWith(expect.stringContaining("「影片連結」欄重複"));
+    await expect(storage.findApprovedByUrl(url)).resolves.toBe(false);
+    expect(onGateSkip).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get.mock.calls.every(([req]) => req.range.endsWith("!1:1"))).toBe(true);
+
+    header = ["備註", " 影片連結 ", "狀態"];
+    await expect(storage.findApprovedByUrl(url)).resolves.toBe(true);
+    expect(get).toHaveBeenCalledTimes(4);
+    expect(get).toHaveBeenLastCalledWith({ spreadsheetId: "sheet-id", range: "'總表'!B2:B" });
+    await expect(storage.findApprovedByUrl(url)).resolves.toBe(true);
+    expect(get).toHaveBeenCalledTimes(4); // 合法表頭的成功結果仍可快取。
+    expect(onGateSkip).toHaveBeenCalledTimes(2);
+  });
+
   it("讀資料欄失敗:return false + 觸發 onGateSkip(無法讀取欄)", async () => {
     const onGateSkip = vi.fn();
     const storage = makeStorage((req) => {

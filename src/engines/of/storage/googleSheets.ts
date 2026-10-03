@@ -185,7 +185,7 @@ export class GoogleSheetsStorage implements Storage {
    * 值為 approvedGateKey(= groupKey ∘ cleanUrl)——抗規則漂移**與參數/形態漂移**:歷史列是
    * 「當年的清理規則」寫的、還可能帶當年的分享參數或另一種分享形態(youtu.be vs watch?v=),
    * 字串比對會漏擋;改比 groupKey 之後同一支片永遠同一把鍵。建集合與查詢兩側走同一支函式。
-   * fail-soft:讀不到總表 / 找不到 URL 欄 → 回空 Set(照常收錄)並觸發 onGateSkip;
+   * fail-soft:讀不到總表 / URL 欄缺失或重複 → 回空 Set(照常收錄)並觸發 onGateSkip;
    * 失敗「不快取」(清掉才回),讓下一筆可再試(維持「gate 掛了也不放棄」的降級)。
    */
   async approvedKeySet(): Promise<Set<string>> {
@@ -206,14 +206,17 @@ export class GoogleSheetsStorage implements Storage {
       return new Set();
     }
 
-    const urlColIndex = header.findIndex((cell) => cell === PROD_URL_HEADER);
-    if (urlColIndex < 0) {
-      logger.warn(`總表去重跳過:${this.prodSheetName} 找不到「${PROD_URL_HEADER}」欄`);
-      this.onGateSkip?.(`總表去重跳過:${this.prodSheetName} 找不到「${PROD_URL_HEADER}」欄(擋回流 gate 失效,照常收錄)`);
+    const urlColIndexes = header.flatMap((cell, i) => cell === PROD_URL_HEADER ? [i] : []);
+    if (urlColIndexes.length !== 1) {
+      const reason = urlColIndexes.length === 0
+        ? `找不到「${PROD_URL_HEADER}」欄`
+        : `「${PROD_URL_HEADER}」欄重複`;
+      logger.warn(`總表去重跳過:${this.prodSheetName} ${reason}`);
+      this.onGateSkip?.(`總表去重跳過:${this.prodSheetName} ${reason}(擋回流 gate 失效,照常收錄)`);
       return new Set();
     }
 
-    const urlCol = colLetter(urlColIndex);
+    const urlCol = colLetter(urlColIndexes[0]!);
     try {
       const res = await withRetry("讀總表影片連結", () =>
         this.sheets.spreadsheets.values.get({
