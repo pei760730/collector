@@ -10,6 +10,7 @@
  * 所以 log 只印這裡組出來的字串摘要:name/message/HTTP 狀態/Google reason,全部過 redactSecrets。
  * 絕不輸出 config/body/request/response.data 其他欄位。
  */
+import { logger } from "@pei760730/collector-core";
 
 /** Telegram bot token 出現在 URL 路徑裡的形態:`/bot<數字>:<token>`。 */
 const TELEGRAM_TOKEN_IN_PATH = /\/bot\d+:[A-Za-z0-9_-]+/g;
@@ -62,4 +63,12 @@ export function errDetail(error: unknown): string {
   const summary = errSummary(error);
   const stack = error instanceof Error && typeof error.stack === "string" ? error.stack : "";
   return stack ? `${summary}\n${redactSecrets(stack)}` : summary;
+}
+
+/**
+ * 進程最外層 catch 專用:摘要 + stack(遮秘密)以單一字串記 error。
+ * drain/index 四個 entry 共用;entry 本身 import 即執行、測試載不進來,所以把這行收在這裡測。
+ */
+export function logFatal(label: string, error: unknown): void {
+  logger.error(`${label}:${errDetail(error)}`);
 }

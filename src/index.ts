@@ -9,7 +9,7 @@ import { MemoryStorage } from "./storage/memory.js";
 import type { Storage } from "./storage/Storage.js";
 import { createBot } from "./bot/router.js";
 import { logger } from "./utils/logger.js";
-import { errDetail } from "./shared/errorSummary.js";
+import { logFatal } from "./shared/errorSummary.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -54,7 +54,7 @@ if (isOfTarget()) {
   await import("./engines/of/index.js");
 } else {
   main().catch((err) => {
-    logger.error(`啟動失敗:${errDetail(err)}`);
+    logFatal("啟動失敗", err);
     process.exit(1);
   });
 }
