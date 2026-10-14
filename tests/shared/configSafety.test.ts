@@ -113,6 +113,16 @@ describe.each(TARGETS)("$name loadConfig", (target) => {
     else expect(record.target).toBe(target.expectedTarget);
   });
 
+  it("空白名單 fail-fast 後再次 loadConfig 仍丟錯，不快取未通過驗證的設定", async () => {
+    const { loadConfig } = await freshLoader();
+    setSheetsEnv();
+    process.env.ALLOWED_CHAT_IDS = "";
+    const message = `STORAGE=sheets 但未設 ALLOWED_CHAT_IDS:正式寫表必須限定來源 chat id(逗號分隔純數字),否則公開後任何人都能灌你的${target.sheetsDestination}`;
+
+    expect(() => loadConfig()).toThrow(message);
+    expect(() => loadConfig()).toThrow(message);
+  });
+
   it("sheets + 白名單 + 已設 ERROR_CHAT_ID → 不 warn", async () => {
     const { loadConfig, logger } = await freshLoader();
     setSheetsEnv();

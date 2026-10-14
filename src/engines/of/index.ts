@@ -8,6 +8,7 @@ import { MemoryStorage } from "./storage/memory.js";
 import type { Storage } from "./storage/Storage.js";
 import { createBot } from "./bot/router.js";
 import { logger } from "./utils/logger.js";
+import { errDetail } from "../../shared/errorSummary.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -39,6 +40,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error("啟動失敗", err);
+  logger.error(`啟動失敗:${errDetail(err)}`);
   process.exit(1);
 });

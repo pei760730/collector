@@ -28,6 +28,7 @@ import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { MemoryStorage } from "./storage/memory.js";
 import type { Storage } from "./storage/Storage.js";
 import { logger } from "./utils/logger.js";
+import { errDetail } from "../../shared/errorSummary.js";
 
 async function main(): Promise<DrainResult> {
   const config = loadConfig();
@@ -90,6 +91,6 @@ main()
   // 就是靜默丟資料。main resolve 前已 await flushGateAlert,這裡 exit 不會截斷告警。
   .then((result) => process.exit(exitCodeFor(result)))
   .catch((err) => {
-    logger.error("drain 失敗", err);
+    logger.error(`drain 失敗:${errDetail(err)}`);
     process.exit(1);
   });

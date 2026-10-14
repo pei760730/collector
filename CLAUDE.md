@@ -48,7 +48,7 @@
 
 - 使用者 **Pei**([pei760730](https://github.com/pei760730)),回覆繁體中文、短句直接。
 - 技術棧已定案:Node.js + TypeScript、telegraf、googleapis、dayjs、vitest。儲存 Google Sheets。
-- **部署:GitHub Actions cron drain($0,預設)** —— `.github/workflows/collect.yml` 設 `*/5` 跑 `npm run drain`(`src/drain.ts`:`getUpdates` 撈乾→`handleUpdate`→ack→結束),但 GitHub 對 public repo 高頻排程大幅節流,**實際到班率遠低於申請值,且會隨 repo 變安靜繼續往下**——數字的唯一正本在 `collect.yml` 的 schedule 註解(含重量指令),本檔不複述、以免兩處對不上(2026-09-08 就發生過:#112 更新了 workflow、漏了這裡)。Telegram 留更新 ~24h,只要**最長間隔** < 24h 就不漏;每次 run 撈乾全部 pending,漏跑自癒。**不要在本機 Docker/WSL2 跑常駐**:連 googleapis 帶 JWT 大封包會 `Premature close`(WSL2 MTU 丟大封包)。Docker/webhook 部署線已於 2026-07-03 解散(生產走 cron drain 數月、常駐線從未上場);`npm run dev` = 本機 long polling,僅開發用。
+- **部署:GitHub Actions cron drain($0,預設)** —— `.github/workflows/collect.yml` 設 `*/5` 跑 `npm run drain`(`src/drain.ts`:`getUpdates` 撈乾→`handleUpdate`→ack→結束),但 GitHub 對 public repo 高頻排程大幅節流,**實際到班率遠低於申請值,且會隨 repo 變安靜繼續往下**——數字的唯一正本在 `collect.yml` 的 schedule 註解(含重量指令),本檔不複述、以免兩處對不上(2026-09-08 就發生過:#112 更新了 workflow、漏了這裡)。Telegram 留更新 ~24h,只要**最長間隔** < 24h 就不漏;每次 run 撈乾全部 pending,漏跑自癒。**`heartbeat.yml` 是死人開關**(每 6h):collect.yml 最新 run 距今 >6h 自動補 dispatch(並 `gh workflow enable` 防 60 天無活動停用),>18h 或補觸發失敗才推 kai-notify —— collect.yml 的 `if: failure()` 只在「有 run」時響,排程沒被排進去是它看不到的。**公開 log 紀律**:錯誤一律經 `src/shared/errorSummary.ts`(`errSummary`/`errDetail`,遮 Telegram token)轉字串再 log,不要 `logger.error(msg, err)` 丟整個錯誤物件(GaxiosError 會把 `config.body` = 整列連結印進公開 log)。**不要在本機 Docker/WSL2 跑常駐**:連 googleapis 帶 JWT 大封包會 `Premature close`(WSL2 MTU 丟大封包)。Docker/webhook 部署線已於 2026-07-03 解散(生產走 cron drain 數月、常駐線從未上場);`npm run dev` = 本機 long polling,僅開發用。
 - 開發指令:`npm run dev`(tsx watch)、`npm test`、`npm run typecheck`、`npm run build`。
 
 ## 第五層:待確認(邊做邊修)

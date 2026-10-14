@@ -21,6 +21,7 @@ import { STATUS, type StagingRow } from "../../types.js";
 import { approvedGateKey } from "../../storage/approvedKey.js";
 import type { Storage } from "../../storage/Storage.js";
 import { logger } from "../../utils/logger.js";
+import { errSummary } from "../../../../shared/errorSummary.js";
 import {
   formatErrorMsg,
   savedMsg,
@@ -135,7 +136,7 @@ export async function runIngest(
       await deps.storage.append(row);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      logger.error("寫入暫存區失敗", err);
+      logger.error(`寫入暫存區失敗:${errSummary(err)}`);
       // 通知 drain:這筆沒寫成功(可重試)。常駐版沒給 callback → no-op,行為不變。
       deps.onPersistError?.();
       return {

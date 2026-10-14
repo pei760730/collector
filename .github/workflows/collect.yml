@@ -18,6 +18,7 @@ on:
     #   → GitHub 對高頻 cron 的配給會**無預警重配**,而且不會有任何東西變紅。
     #   ⚠️ 「越安靜的 repo 跑越少」在這裡**沒複現**:09-08 有 6 個 commit(窗內最忙)只得 7 次,
     #   08-14 零 commit 得 29 次。別再拿 repo 活躍度解釋到班率。
+    #   **自動看守:heartbeat.yml**(每 6h)—— 最新一次 run 距今 >6h 自動補 dispatch、>18h 或補觸發失敗才推通知。
     #   **要盯的指標是「最長間隔 vs 24h」**(Telegram 保留未領更新約 24h):目前最長 11.2h,
     #   餘裕約 2.1 倍;p99 已達 9.9h,**p90 逼近 8h 就重新評估**(webhook 線已於 2026-07-03 解散、不是現成退路,見 CLAUDE.md 部署段)。
     #   **維持 */5 是刻意的**:申請得密才換得到現在這個到班率,調疏只會更慢。這裡改的是說法不是值。
@@ -153,7 +154,10 @@ jobs:
         run: |
           # grep -v 先剔除已知的 WARN 誤導行:「ERROR_CHAT_ID 未設」是開機提示(含 ERROR/失敗
           # 字樣會被下面的真因擷取撈到),不是本次失敗的原因,別讓它頂掉真錯誤進通知。
-          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | grep -v 'ERROR_CHAT_ID 未設' | tail -n 2 | tr '\n' ' ' | python3 -c 'import sys;sys.stdout.write(sys.stdin.buffer.read().decode("utf-8","replace")[:280])')
+          # sed 在截斷「之前」遮 Telegram token:telegraf 只在 fetch 階段 redact,讀 body 階段的
+          # node-fetch 錯誤訊息帶完整 /bot<TOKEN>/ URL;GitHub 只遮 log 顯示,這裡組出的字串會
+          # 明文送進 kai-notify。先截斷再遮,跨 280 字邊界的半截 token 會漏網。
+          ERR=$(grep -iE 'ERROR|Error:|錯誤|失敗' drain.log 2>/dev/null | grep -v 'ERROR_CHAT_ID 未設' | tail -n 2 | tr '\n' ' ' | sed -E 's#/bot[0-9]+:[A-Za-z0-9_-]+#/bot***#g' | python3 -c 'import sys;sys.stdout.write(sys.stdin.buffer.read().decode("utf-8","replace")[:280])')
           [ -z "$ERR" ] && ERR="(未擷取到錯誤,請看 log)"
           echo "text=🔴 collector[${{ matrix.target }}] collect 失敗:${ERR} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$GITHUB_OUTPUT"
       - name: Notify Kai on failure (kai-notify)

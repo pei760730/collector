@@ -1,0 +1,94 @@
+name: heartbeat
+
+# collect.yml 的死人開關(2026-10-14 審計 F1)。
+#
+# collect.yml 所有告警都掛在「有 run 在跑」的前提上(if: failure() / notify-broken)。
+# 但 GitHub 對高頻 cron 的配給會無預警重配(collect.yml 檔頭:08-27 起到班率 2.3%、
+# p99 9.9h、最長 11.2h),public repo 60 天無活動也會自動停用排程 —— 這兩種情況
+# 根本沒有 run,也就沒有任何東西會紅。Telegram 只保留未領更新約 24h,超過就靜默丟資料。
+#
+# 這支每 6h 看一次 collect.yml 最新一次 run(任何 event、任何狀態;失敗 run 由 collect.yml
+# 自己告警,這裡只管「有沒有在跑」):
+#   距今 > 6h  → 自動補 dispatch collect.yml(自癒,不推通知 —— Owner 偏好:系統自癒不打擾)
+#   距今 > 18h → 補 dispatch 之外再推通知(離 24h 只剩 6h,需要人確認排程)
+#   補 dispatch 失敗 → 推通知
+# 6h 閾值 = 節流後的中位間隔(3.5h)以上才出手;18h = 留 6h 給人處理。
+# GITHUB_TOKEN 觸發 workflow_dispatch 是 GitHub 允許的例外(不受防遞迴限制)。
+# 本身也是 cron,6h 級排程實測到班 97%(collect.yml 檔頭);自己壞掉由 job 層 failure 通知。
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write # workflow enable / workflow run
+  contents: read
+
+concurrency:
+  group: heartbeat
+  cancel-in-progress: false
+
+jobs:
+  watch-collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check collect.yml freshness (self-heal)
+        id: watch
+        shell: bash
+        # tests/workflows/heartbeat.test.ts 會抽出這段 run block、以 stub gh 跑四種分支,改邏輯要一起改測試。
+        run: |
+          # 60 天無活動被自動停用時自癒;本來就啟用 = no-op。失敗不擋後面的新鮮度檢查。
+          gh workflow enable collect.yml >/dev/null 2>&1 || echo "::notice::gh workflow enable collect.yml 未成功(多半本來就是啟用狀態),不影響新鮮度檢查"
+          # 查詢失敗 = 本 step 非 0 → job 層 failure 通知(看守自己壞掉也要有聲音)。
+          created_at=$(gh api "repos/$GH_REPO/actions/workflows/collect.yml/runs?per_page=1" --jq '.workflow_runs[0].created_at // empty')
+          now=$(date -u +%s)
+          if [ -n "$created_at" ]; then
+            age_h=$(( (now - $(date -u -d "$created_at" +%s)) / 3600 ))
+            age_label="${age_h}h"
+          else
+            age_h=999999
+            age_label="(查不到任何 run)"
+          fi
+          echo "collect.yml 最新一次 run:${created_at:-無},距今 ${age_label}"
+          alert=false
+          msg=""
+          if [ "$age_h" -ge 6 ]; then
+            if gh workflow run collect.yml; then
+              echo "已自動補觸發 collect.yml(最新一次 run 距今 ${age_label})" | tee -a "$GITHUB_STEP_SUMMARY"
+              if [ "$age_h" -ge 18 ]; then
+                alert=true
+                msg="🟠 collector 已 ${age_label} 沒有任何 drain run(Telegram 只留 24h),已自動補觸發;請確認 Actions 排程 — ${RUN_URL}"
+              fi
+            else
+              alert=true
+              msg="🔴 collector 已 ${age_label} 沒有任何 drain run(Telegram 只留 24h),自動補觸發失敗;請手動 dispatch collect.yml — ${RUN_URL}"
+            fi
+          fi
+          echo "alert=$alert" >> "$GITHUB_OUTPUT"
+          if [ -n "$msg" ]; then
+            echo "$msg"
+            echo "text=$msg" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Notify Kai (stale collect, kai-notify)
+        if: steps.watch.outputs.alert == 'true'
+        uses: pei760730/kai-notify@v1
+        env:
+          KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
+          KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
+        with:
+          text: ${{ steps.watch.outputs.text }}
+
+      - name: Notify Kai on heartbeat failure (kai-notify)
+        if: failure()
+        uses: pei760730/kai-notify@v1
+        env:
+          KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
+          KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
+        with:
+          text: "🔴 collector heartbeat 自己壞了(查不到 collect.yml 狀態),排程看守暫時失明 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

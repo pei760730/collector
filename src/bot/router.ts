@@ -13,10 +13,12 @@ import { runCollect } from "./handlers/collect.js";
 import { runStats } from "./handlers/stats.js";
 import { VOC_TARGET, type TargetSpec } from "../targets.js";
 import { logger } from "../utils/logger.js";
+import { errSummary } from "../shared/errorSummary.js";
 import {
   createErrorNotifier,
   errText,
   installSourceAllowlist,
+  installEditedMessageHint,
   DRAIN_SAFE_TELEGRAF_OPTIONS,
 } from "../shared/telegramSafety.js";
 
@@ -72,9 +74,9 @@ export function createBot(
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,不能讓它掉進下面的
       // catch 對 error chat 發假的「/stats 失敗」(統計本身是成功的);但也不全吞 ——
       // 至少留 warn,發送壞掉才查得到。對齊 feed router 同款護法。
-      await ctx.reply(await runStats({ storage })).catch((e) => logger.warn("/stats 回覆發送失敗", e));
+      await ctx.reply(await runStats({ storage })).catch((e) => logger.warn(`/stats 回覆發送失敗:${errSummary(e)}`));
     } catch (err) {
-      logger.error("/stats 失敗", err);
+      logger.error(`/stats 失敗:${errSummary(err)}`);
       await ctx.reply("❌ 取統計失敗。").catch(() => {});
       await notifyError(`/stats 失敗:${errText(err)}`);
     }
@@ -108,7 +110,7 @@ export function createBot(
       await ctx.reply(result.reply, kb).catch(() => {});
       if (result.error) await notifyError(result.error);
     } catch (err) {
-      logger.error("collect 例外", err);
+      logger.error(`collect 例外:${errSummary(err)}`);
       // dedupIndex() 全表讀在 inner try 之外:暫態失敗(429/5xx/斷線)若照常 ack,這則
       // 訊息就從佇列永久消失。比照夯度 callback(下方)翻 persist 旗標讓 drain 停在此
       // offset、下次 cron 重領重試;非暫態重領也沒用,維持通知後照常 ack。
@@ -125,6 +127,9 @@ export function createBot(
   // 只接 text 會讓這類訊息被靜默 ack 掉、不收錄也不回覆(漏資料)。caption 走 collect:
   // 有連結就收,沒連結則回「看不懂」提示,不再無聲丟失。
   bot.on(message("caption"), (ctx) => handleCollectText(ctx, ctx.message.caption ?? ""));
+
+  // 編輯過的訊息 → 只回「請重貼」提示,不收錄(理由見 installEditedMessageHint)。
+  installEditedMessageHint(bot);
 
   // 夯度按鈕點擊 → 回填該列「夯度」(tbvoc 專屬;voc target 無 hotValues 整段不註冊)。
   // callback_data = h:<idx>:<dedupKey>(key 可能含 ":" 如 https://,故 (.+) 貪婪吃到尾;idx 在前不歧義)。
@@ -149,7 +154,7 @@ export function createBot(
           await ctx.answerCbQuery("這支已不在參考池(可能已挑走)").catch(() => {});
         }
       } catch (err) {
-        logger.error("夯度 callback 失敗", err);
+        logger.error(`夯度 callback 失敗:${errSummary(err)}`);
         // setHot 是冪等單格寫(同格同值,重打不寫壞)→ 暫態錯誤(429/5xx/網路)翻 persist
         // 旗標讓 drain 停在此 offset、下次 cron 重領這筆 callback 重試,夯度 tap 才不會因
         // 一次暫態故障被 ack 掉永久丟失(舊版只 notifyError,update 照 ack)。

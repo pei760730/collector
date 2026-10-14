@@ -7,6 +7,7 @@
 import type { Update } from "@telegraf/types";
 import { logger } from "@pei760730/collector-core";
 import { callTelegramWithRetry } from "./telegramRetry.js";
+import { errSummary } from "./errorSummary.js";
 
 /** drain 迴圈需要的最小 bot 介面(Telegraf 子集；測試注入假件即可，不用真連線)。 */
 export interface DrainableBot {
@@ -53,7 +54,7 @@ export async function drainUpdates(
         await bot.handleUpdate(u);
       } catch (err) {
         // 解析/路由層的非預期例外(非寫入失敗):這類重領也沒用,記錄後跳過。
-        logger.error(`處理 update ${u.update_id} 例外(跳過,下次不重領)`, err);
+        logger.error(`處理 update ${u.update_id} 例外(跳過,下次不重領):${errSummary(err)}`);
       }
       if (persist.failed) {
         // 寫入失敗(可重試):不前進 offset、結束整個 drain,之後不再呼叫 getUpdates ——
