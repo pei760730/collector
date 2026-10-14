@@ -1,6 +1,6 @@
 # CLAUDE.md — collector 協作規則
 
-> 接手這個 repo(含 AI)先讀這份。collector(原 short-video-bot,2026-07-15 改名;#9 三併一後為一殼多 target:**voc / tbvoc / of**)= Telegram 短影音收集 bot,
+> 接手這個 repo(含 AI)先讀這份。collector(原 short-video-bot,2026-07-15 改名;#9 三併一後為一殼多 target:**voc / tbvoc / of / ofgay**)= Telegram 短影音收集 bot,
 > 取代舊 n8n 流程。貼「連結+備註」→ 解析→清理→判平台→抽 video ID→去重→**直接寫 voc 的 Google Sheet「參考池」分頁**。
 > (2026-06-22:廢「暫存區」中間層 —— voc 已砍 sync-pool,bot 與 voc 同表同 SA,直寫參考池就是最終狀態。)
 > **of 引擎 target 例外(`of` / `ofgay`)**:走 `src/engines/of/` vendored 獨立引擎(原 feed-collector,2026-07-15 併入,舊 repo archive)——暫存區英文 5 欄、STATUS 狀態流、tt_/dy_ 前綴,與 voc/tbvoc 刻意不同 scope(owner 拍板別硬拉 parity),**不在 TargetSpec 內**;`src/drain.ts` 依 `targets.ts` 的 `OF_ENGINE_TARGETS`(`isOfTarget`)委派,本檔以下各層描述**只適用 voc/tbvoc 殼**,of 引擎的契約/不變式見 `src/engines/of/` 內檔頭註解與 `tests/of/`。**`ofgay`(2026-08-08 加入)= 同一支引擎跑 gay 市場**:換 bot、換表(`OFGAY_` 前綴 secrets),引擎程式碼零差異;要再開市場照這個形狀加(`OF_ENGINE_TARGETS` 一個名字 + collect.yml 一筆 matrix),別 fork 引擎。上游 tbvoc 契約(原 clip-collector)同日併入:`src/targets.ts` + `contracts/tbvoc/` + `tests/contractTbvoc.test.ts`,SSoT 在 TeaBus-VOC repo。
@@ -41,7 +41,7 @@
 - **storage 只認 `Storage` 介面**:換來源新增實作即可,handlers 不動。
 - **最小權限**:Google 只用 `spreadsheets` scope。
 - **fail fast**:缺必要 env 啟動就丟錯,不帶半套設定跑。
-- **git tag dep bump 必驗 lock resolved**:bump `collector-core`(或任何 `github:…#tag` dep)時,改完 spec 必須重生/修正 lockfile,並確認 `package-lock.json` 該套件 `resolved` 的 commit sha == tag 指向的 sha(`gh api repos/pei760730/collector-core/git/ref/tags/<tag>`),PR body 附上該 sha。理由:`npm ci` 對 git dep 只驗 spec 字串不驗 resolved,spec 改了 lock 沒重生 → CI 綠著裝舊版。證據:PR #49 宣稱 bump v0.2.2,lock resolved 停在 v0.2.1 commit `95429dc`,生產跑舊版至 2026-07-04 體檢才發現(#51 直接升 v0.2.3 修復,並在 ci.yml 加「宣稱==實裝」守門,紅→綠反向驗證過)。日常由 ci.yml 守門步驟自動擋;此條供 bump 時主動照做,免得紅在 CI 才回頭修。**bump PR 必看 of dedupConformance/contract 測試綠**(單一 pin 三 target lockstep:voc/tbvoc/of 共用同一個 core 版本,任一 target 契約測試紅就不能升)。**發現新版→開單已自動化(2026-07-06)**:`core-bump.yml` 每日 cron 呼叫 core 的 `consumer-bump.yml`(reusable,SSOT 在 core)自動開 bump PR(surgical 編輯 + npm ci 反向驗證 + dispatch CI + kai-notify),人只需授權 merge;手動 bump 時才照本條操作。失效條件:dep 改走 npm registry 發版(語意化版本 + integrity)後此條退役。
+- **git tag dep bump 必驗 lock resolved**:bump `collector-core`(或任何 `github:…#tag` dep)時,改完 spec 必須重生/修正 lockfile,並確認 `package-lock.json` 該套件 `resolved` 的 commit sha == tag 指向的 sha(`gh api repos/pei760730/collector-core/git/ref/tags/<tag>`),PR body 附上該 sha。理由:`npm ci` 對 git dep 只驗 spec 字串不驗 resolved,spec 改了 lock 沒重生 → CI 綠著裝舊版。證據:PR #49 宣稱 bump v0.2.2,lock resolved 停在 v0.2.1 commit `95429dc`,生產跑舊版至 2026-07-04 體檢才發現(#51 直接升 v0.2.3 修復,並在 ci.yml 加「宣稱==實裝」守門,紅→綠反向驗證過)。日常由 ci.yml 守門步驟自動擋;此條供 bump 時主動照做,免得紅在 CI 才回頭修。**bump PR 必看 of dedupConformance/contract 測試綠**(單一 pin 四 target lockstep:voc/tbvoc/of/ofgay 共用同一個 core 版本,任一 target 契約測試紅就不能升)。**發現新版→開單已自動化(2026-07-06)**:`core-bump.yml` 每日 cron 呼叫 core 的 `consumer-bump.yml`(reusable,SSOT 在 core)自動開 bump PR(surgical 編輯 + npm ci 反向驗證 + dispatch CI + kai-notify),人只需授權 merge;手動 bump 時才照本條操作。失效條件:dep 改走 npm registry 發版(語意化版本 + integrity)後此條退役。
 - **改治理規則要兩檔一起**:CLAUDE.md 的紅線/部署線/職責變動,同 PR 必 grep AGENTS.md(反之亦然)同步或刪除對應副本。理由:兩檔各存規則副本,單邊更新必留殭屍。證據:2026-07-03 CLAUDE.md 退役「n8n 1:1」紅線、#50 刪 Docker 線,AGENTS.md 硬規則 4 與職責清單至 2026-07-04 仍是舊版,兩檔互相矛盾(#51 已同步清掉)。失效條件:若日後 AGENTS.md 改為「只引用 CLAUDE.md 不複述規則」則此條退役。
 
 ## 第四層:環境
