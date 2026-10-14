@@ -10,7 +10,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 **預設負責:**
 - `src/`(config / pipeline / storage / bot handlers / messages / utils / types)
 - `tests/`(Vitest)、`scripts/`(讀回驗證腳本)、`package.json` / `tsconfig*.json` / `vitest.config.ts`
-- `.github/workflows/`(`ci.yml` 測試、`collect.yml` cron drain 部署)
+- `.github/workflows/`(`ci.yml` 測試、`collect.yml` cron drain 部署、`core-bump.yml` 自動開 collector-core bump PR)
 - bug 修復、refactor、lint/型別/測試修復、效能
 
 **被要求才碰:**
@@ -18,7 +18,7 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 **預設不碰(Claude Code / Owner 的領域):**
 - **Live bot 操作 / Sheet 實際寫入**(真的啟動 bot 收訊息、`STORAGE=sheets` 跑真表)
-- **跨 repo 對接契約,三份都是**:① voc 契約(`CLAUDE.md` §6:voc target 直寫 voc `schema.REFS` 4 欄);② tbvoc 契約(`contracts/tbvoc/` + `src/targets.ts` `TBVOC_COLUMNS`,SSoT 在私有 TeaBus-VOC repo,runbook 見其 CLAUDE.md 第六層);③ of 契約(`src/engines/of/types.ts` `STAGING_COLUMNS`,下游 = of-content-engine 的 GAS)—— 改欄名都要兩 repo 一起,屬跨 repo 協調
+- **跨 repo 對接契約,三份都是**:① voc 契約(`CLAUDE.md` §6:voc target 直寫 voc `schema.REFS` 4 欄);② tbvoc 契約(`contracts/tbvoc/` + `src/targets.ts` `TBVOC_COLUMNS`,SSoT 在私有 TeaBus-VOC repo,runbook 見其 CLAUDE.md 第六層);③ of 契約(`src/engines/of/types.ts` `STAGING_COLUMNS`,`of` 與 `ofgay` 共用;下游 = of-content-engine 的 GAS / ofgay 為 of-gay-engine)—— 改欄名都要兩 repo 一起,屬跨 repo 協調
 - **schema 設計判斷**(`POOL_COLUMNS` 加/砍欄、平台規則、去重策略的大方向)
 - `service_account.json`、`.env`(機密)
 
