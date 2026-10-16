@@ -14,7 +14,12 @@ name: heartbeat
 #   補 dispatch 失敗 → 推通知
 # 6h 閾值 = 節流後的中位間隔(3.5h)以上才出手;18h = 留 6h 給人處理。
 # GITHUB_TOKEN 觸發 workflow_dispatch 是 GitHub 允許的例外(不受防遞迴限制)。
-# 本身也是 cron,6h 級排程實測到班 97%(collect.yml 檔頭);自己壞掉由 job 層 failure 通知。
+# 本身也是 cron,6h 級排程實測到班 97%(collect.yml 檔頭)。
+# 60 天無活動規則同樣會停用本 workflow(PR #136 Codex review P2):所以每輪都對 collect.yml
+# 與 heartbeat.yml「自己」呼叫 enable API(PUT …/workflows/{id}/enable,已啟用時是冪等 204)——
+# 這是 keepalive-workflow 的 API 保活作法,用 GITHUB_TOKEN 重置閒置計時,不需要假 commit。
+# 自己壞掉(含 job 在 Set up 就死、逾時 cancelled)由獨立的 notify-broken job 通知,
+# 同 collect.yml 的作法:同 job 內的 if: failure() step 對那兩種收場免疫。
 on:
   schedule:
     - cron: "17 */6 * * *"
@@ -38,8 +43,11 @@ jobs:
         shell: bash
         # tests/workflows/heartbeat.test.ts 會抽出這段 run block、以 stub gh 跑四種分支,改邏輯要一起改測試。
         run: |
-          # 60 天無活動被自動停用時自癒;本來就啟用 = no-op。失敗不擋後面的新鮮度檢查。
-          gh workflow enable collect.yml >/dev/null 2>&1 || echo "::notice::gh workflow enable collect.yml 未成功(多半本來就是啟用狀態),不影響新鮮度檢查"
+          # API 保活 + 停用自癒:對 collect.yml 與本 workflow 呼叫 enable(冪等),重置 60 天閒置計時。
+          # 失敗不擋後面的新鮮度檢查(新鮮度才是真正的告警依據)。
+          for wf in collect.yml heartbeat.yml; do
+            gh workflow enable "$wf" >/dev/null 2>&1 || echo "::warning::gh workflow enable $wf 未成功,保活這輪沒做到(新鮮度檢查照跑)"
+          done
           # 查詢失敗 = 本 step 非 0 → job 層 failure 通知(看守自己壞掉也要有聲音)。
           created_at=$(gh api "repos/$GH_REPO/actions/workflows/collect.yml/runs?per_page=1" --jq '.workflow_runs[0].created_at // empty')
           now=$(date -u +%s)
@@ -84,11 +92,18 @@ jobs:
         with:
           text: ${{ steps.watch.outputs.text }}
 
-      - name: Notify Kai on heartbeat failure (kai-notify)
-        if: failure()
+  # job 層出口:watch-collect 在第一個 step 前就死(runner/action 下載失敗)或逾時被 cancelled 時,
+  # 同 job 內的任何 step 都不會跑;只有 needs.<job>.result 看得到(對齊 collect.yml notify-broken)。
+  notify-broken:
+    needs: watch-collect
+    if: ${{ always() && (needs.watch-collect.result == 'failure' || needs.watch-collect.result == 'cancelled') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report to Kai (kai-notify, fail-soft)
         uses: pei760730/kai-notify@v1
         env:
           KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
           KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
         with:
-          text: "🔴 collector heartbeat 自己壞了(查不到 collect.yml 狀態),排程看守暫時失明 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          text: "🔴 collector heartbeat 收場為 ${{ needs.watch-collect.result }}(查不到 collect.yml 狀態),排程看守暫時失明 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
