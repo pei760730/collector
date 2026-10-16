@@ -5,6 +5,8 @@
  */
 import type { Context, Telegraf } from "telegraf";
 import { logger } from "@pei760730/collector-core";
+import { editedMessage } from "telegraf/filters";
+import { errSummary } from "./errorSummary.js";
 
 /**
  * drain 用的 Telegraf 建構選項 —— 關掉 telegraf 的 handler 逾時牆。
@@ -47,6 +49,11 @@ export interface TelegramSafetyConfig {
  *
  * 未授權更新會被視為已處理而不呼叫 next，讓 drain 正常 ack、避免垃圾訊息卡住
  * offset；同一 chat 每個進程只提示一次，且公開 log 只留下遮蔽後的 id。
+ *
+ * 管理員通知每個進程(= 每輪 drain)最多 MAX_DENIED_ADMIN_NOTICES_PER_RUN 則:
+ * deniedNotified 只對「同一 chat」去重,陌生人換 N 個帳號/群組就能讓 ERROR_CHAT_ID 收 N 則;
+ * 中止重領時同一批被擋訊息也會在新進程再觸發一次。超過上限只留一行 warn。
+ * 對被擋者本人的提示不受上限影響(每 chat 一次)。
  */
 export function installSourceAllowlist(
   bot: Telegraf<Context>,
@@ -56,6 +63,8 @@ export function installSourceAllowlist(
 
   const allowed = new Set(config.allowedChatIds);
   const deniedNotified = new Set<number>();
+  let adminNotices = 0;
+  let adminCapWarned = false;
   bot.use(async (ctx, next) => {
     const chatId = ctx.chat?.id;
     const fromId = ctx.from?.id;
@@ -72,10 +81,16 @@ export function installSourceAllowlist(
       deniedNotified.add(chatId);
       const denyId = fromId ?? chatId;
       await ctx.reply(deniedMessage(denyId)).catch((error) => {
-        logger.warn(`回覆非授權來源提示失敗:chat=${maskId(chatId)}`, error);
+        logger.warn(`回覆非授權來源提示失敗:chat=${maskId(chatId)}:${errSummary(error)}`);
       });
 
-      if (config.errorChatId) {
+      if (config.errorChatId && adminNotices >= MAX_DENIED_ADMIN_NOTICES_PER_RUN) {
+        if (!adminCapWarned) {
+          adminCapWarned = true;
+          logger.warn("本輪被擋來源通知已達上限");
+        }
+      } else if (config.errorChatId) {
+        adminNotices += 1;
         const username = ctx.from?.username ? ` @${ctx.from.username}` : "";
         await ctx.telegram
           .sendMessage(
@@ -83,11 +98,34 @@ export function installSourceAllowlist(
             `🔔 有人想用 bot 但不在白名單：id=${denyId}${username}。放行就把這 id 加進 ALLOWED_CHAT_IDS。`,
           )
           .catch((error) => {
-            logger.warn(`通知管理員被擋來源失敗:chat=${maskId(chatId)}`, error);
+            logger.warn(`通知管理員被擋來源失敗:chat=${maskId(chatId)}:${errSummary(error)}`);
           });
       }
     }
   });
+}
+
+/** 每輪 drain 對 ERROR_CHAT_ID 發「被擋來源」通知的上限(見 installSourceAllowlist)。 */
+export const MAX_DENIED_ADMIN_NOTICES_PER_RUN = 3;
+
+/** 使用者編輯既有訊息時的提示(編輯不進收集 pipeline)。 */
+export const EDITED_MESSAGE_HINT = "✏️ 編輯過的訊息不會重新收錄;要收請把連結重新貼一次。";
+
+/**
+ * edited_message 提示 —— 兩支 router 共用。
+ *
+ * 只掛 message("text"/"caption") 時,編輯過的訊息通過白名單後沒有 handler,被 drain 照常 ack、
+ * 也不回覆:使用者把「看不懂」的訊息改成有連結,以為修好了,實際什麼都沒收。
+ * 刻意不送進收集 pipeline(避免重複列與「原訊息已收、編輯版又收」的語意混亂),只回提示。
+ * 只接 text/caption 的編輯(即時位置分享等其他編輯會連續觸發,不能逐則回覆)。
+ * 必須在 installSourceAllowlist 之後安裝:非白名單來源的編輯仍由白名單擋下。
+ */
+export function installEditedMessageHint(bot: Telegraf<Context>): void {
+  const hint = async (ctx: Context) => {
+    await ctx.reply(EDITED_MESSAGE_HINT).catch(() => {});
+  };
+  bot.on(editedMessage("text"), hint);
+  bot.on(editedMessage("caption"), hint);
 }
 
 /** 建立共用錯誤通知器；沒設 ERROR_CHAT_ID 時維持 no-op。 */
@@ -100,7 +138,7 @@ export function createErrorNotifier(
     try {
       await bot.telegram.sendMessage(errorChatId, `🐞 ${text}`);
     } catch (error) {
-      logger.error("通知 error chat 失敗", error);
+      logger.error(`通知 error chat 失敗:${errSummary(error)}`);
     }
   };
 }

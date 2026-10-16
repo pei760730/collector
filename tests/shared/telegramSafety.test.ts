@@ -67,6 +67,23 @@ function guardedBot(allowedChatIds: number[], errorChatId = "") {
 }
 
 describe("installSourceAllowlist", () => {
+  it("五個不同被擋 chat：管理員最多三則、各 chat 仍提示一次、上限只 warn 一次", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { bot, handled } = guardedBot([555], "999000999");
+
+    for (let id = 101; id <= 105; id++) {
+      await bot.handleUpdate(textUpdate(id, id, id));
+      await bot.handleUpdate(textUpdate(id, id, id + 100));
+    }
+
+    expect(handled.count).toBe(0);
+    expect(sent.filter((m) => m.chatId === "999000999")).toHaveLength(3);
+    for (let id = 101; id <= 105; id++) {
+      expect(sent.filter((m) => m.chatId === id)).toHaveLength(1);
+    }
+    expect(warn.mock.calls.filter((c) => c[0] === "本輪被擋來源通知已達上限")).toHaveLength(1);
+  });
+
   it("空名單不限制，更新會交給後續 handler", async () => {
     const { bot, handled } = guardedBot([]);
 
@@ -139,7 +156,8 @@ describe("installSourceAllowlist", () => {
     await expect(bot.handleUpdate(textUpdate(424242, 717171))).resolves.toBeUndefined();
 
     expect(handled.count).toBe(0);
-    expect(warn).toHaveBeenCalledWith("回覆非授權來源提示失敗:chat=***42", failure);
+    // 公開 log 只收字串摘要,不再把錯誤物件整個交給 console(見 shared/errorSummary.ts)。
+    expect(warn).toHaveBeenCalledWith("回覆非授權來源提示失敗:chat=***42:Error: Forbidden");
   });
 });
 
@@ -163,7 +181,7 @@ describe("createErrorNotifier", () => {
 
     await expect(createErrorNotifier(bot, "999000999")("寫入失敗")).resolves.toBeUndefined();
 
-    expect(error).toHaveBeenCalledWith("通知 error chat 失敗", failure);
+    expect(error).toHaveBeenCalledWith("通知 error chat 失敗:Error: Telegram down");
   });
 });
 

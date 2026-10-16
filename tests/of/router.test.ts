@@ -97,7 +97,39 @@ describe("router /stats routing", () => {
   });
 });
 
+/** 把一則新訊息包成 edited_message update(帶 edit_date,與 Telegram 真實 payload 同形)。 */
+function editedUpdate(original: Update): Update {
+  const message = (original as Update.MessageUpdate).message;
+  return { update_id: 10, edited_message: { ...message, edit_date: 1_700_000_100 } } as Update;
+}
+
 describe("router caption routing(#2 媒體 caption 不再靜默丟失)", () => {
+  it.each(["text", "caption"])("白名單 edited_message %s → 提示重新貼、不呼叫 append", async (field) => {
+    const storage = new MemoryStorage();
+    const append = vi.spyOn(storage, "append");
+    const bot = createBot(memoryConfig({ allowedChatIds: [123] }), storage);
+    bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
+    const original = field === "text" ? textMessage("https://youtu.be/aaaaaaaaaaa") : photoWithCaption("https://youtu.be/aaaaaaaaaaa");
+    await bot.handleUpdate(editedUpdate(original));
+
+    expect(sent.some((text) => text.includes("重新貼"))).toBe(true);
+    expect(append).not.toHaveBeenCalled();
+    append.mockRestore();
+  });
+
+  it("非白名單 edited_message 仍被擋，不回重新貼提示", async () => {
+    const storage = new MemoryStorage();
+    const append = vi.spyOn(storage, "append");
+    const bot = createBot(memoryConfig({ allowedChatIds: [555] }), storage);
+    bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
+    await bot.handleUpdate(editedUpdate(textMessage("https://youtu.be/aaaaaaaaaaa")));
+
+    expect(sent.some((text) => text.includes("使用權限"))).toBe(true);
+    expect(sent.some((text) => text.includes("重新貼"))).toBe(false);
+    expect(append).not.toHaveBeenCalled();
+    append.mockRestore();
+  });
+
   it("媒體 caption 裡的連結 → 走 ingest 寫入", async () => {
     const storage = new MemoryStorage();
     const bot = makeBot(storage);

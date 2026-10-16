@@ -21,6 +21,7 @@ import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { MemoryStorage } from "./storage/memory.js";
 import type { Storage } from "./storage/Storage.js";
 import { logger } from "./utils/logger.js";
+import { logFatal } from "./shared/errorSummary.js";
 
 async function main(): Promise<number> {
   const config = loadConfig();
@@ -61,7 +62,7 @@ if (isOfTarget()) {
     // 這裡 exit 不會截斷告警。
     .then((code) => process.exit(code))
     .catch((err) => {
-      logger.error("drain 失敗", err);
+      logFatal("drain 失敗", err);
       process.exit(1);
     });
 }

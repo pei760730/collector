@@ -9,10 +9,12 @@ import type { Storage } from "../storage/Storage.js";
 import { runIngest } from "./handlers/ingest.js";
 import { runStats } from "./handlers/stats.js";
 import { logger } from "../utils/logger.js";
+import { errSummary } from "../../../shared/errorSummary.js";
 import {
   createErrorNotifier,
   errText,
   installSourceAllowlist,
+  installEditedMessageHint,
   DRAIN_SAFE_TELEGRAF_OPTIONS,
 } from "../../../shared/telegramSafety.js";
 
@@ -43,9 +45,9 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
     try {
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 丟例外,不該把「發送失敗」誤報成
       // 「取統計失敗」還驚動 error chat;但也不全吞 —— 至少留 warn,發送壞掉才查得到。
-      await ctx.reply(await runStats({ storage })).catch((e) => logger.warn("/stats 回覆發送失敗", e));
+      await ctx.reply(await runStats({ storage })).catch((e) => logger.warn(`/stats 回覆發送失敗:${errSummary(e)}`));
     } catch (err) {
-      logger.error("/stats 失敗", err);
+      logger.error(`/stats 失敗:${errSummary(err)}`);
       await ctx.reply("❌ 取統計失敗。").catch(() => {});
       await notifyError(`/stats 失敗:${errText(err)}`);
     }
@@ -72,7 +74,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
       await ctx.reply(result.reply).catch(() => {});
       if (result.error) await notifyError(result.error);
     } catch (err) {
-      logger.error("ingest 例外", err);
+      logger.error(`ingest 例外:${errSummary(err)}`);
       // videoIdIndex() 全表讀在 inner try 之外:暫態失敗照常 ack 會讓這則訊息從佇列
       // 永久消失。比照主 router 夯度 callback 翻 persist 旗標,drain 停在此 offset 下輪重領。
       if (isTransient(err)) hooks?.onPersistError?.();
@@ -88,6 +90,9 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
   // 只接 text 會讓這類訊息被靜默 ack 掉、不收錄也不回覆(漏資料)。caption 走 ingest:
   // 有連結就收,沒連結則回「看不懂」提示,不再無聲丟失。
   bot.on(message("caption"), (ctx) => handleIngestText(ctx, ctx.message.caption ?? ""));
+
+  // 編輯過的訊息 → 只回「請重貼」提示,不收錄(理由見 installEditedMessageHint)。
+  installEditedMessageHint(bot);
 
   bot.catch((err, ctx: Context) => {
     logger.error(`Telegraf 未捕捉錯誤 (update ${ctx.updateType})`, err);

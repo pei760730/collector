@@ -12,6 +12,7 @@ import { VOC_TARGET, type TargetSpec } from "./targets.js";
 import { drainUpdates, exitCodeFor, type PersistFlag } from "./shared/drainLoop.js";
 import { callTelegramWithRetry } from "./shared/telegramRetry.js";
 import { logger } from "./utils/logger.js";
+import { errSummary } from "./shared/errorSummary.js";
 
 export async function runDrain(
   config: Config,
@@ -58,7 +59,7 @@ export async function runDrain(
         config.errorChatId,
         `🐞 drain 中止:寫入參考池失敗(已成功 ${result.processed} 筆後停下),未 ack 段留待下次 cron 重領。詳見 Actions log。`,
       ),
-    ).catch((e) => logger.error("通知 error chat 失敗", e));
+    ).catch((e) => logger.error(`通知 error chat 失敗:${errSummary(e)}`));
   }
   return exitCodeFor(result);
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { runCollect } from "../src/bot/handlers/collect.js";
 import { MemoryStorage } from "../src/storage/memory.js";
 import { todayIsoTaipei } from "../src/utils/date.js";
@@ -9,6 +9,28 @@ function deps(storage: MemoryStorage) {
 }
 
 describe("runCollect", () => {
+  it("append 的 GaxiosError 公開 log 只含 400/INVALID_ARGUMENT，不印列內容", async () => {
+    const storage = new MemoryStorage();
+    const failure = Object.assign(new Error("bad request"), {
+      config: { body: '{"values":[["IG","https://example.com/SECRETLINK"]]}' },
+      response: { status: 400, data: { error: { status: "INVALID_ARGUMENT" } } },
+    });
+    const append = vi.spyOn(storage, "append").mockRejectedValue(failure);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await runCollect({ text: "https://youtu.be/aaaaaaaaaaa" }, deps(storage));
+      expect(append).toHaveBeenCalledOnce();
+      const output = JSON.stringify(error.mock.calls);
+      expect(output).not.toContain("SECRETLINK");
+      expect(output).toContain("400");
+      expect(output).toContain("INVALID_ARGUMENT");
+      expect(error.mock.calls.every((call) => call.every((arg) => typeof arg === "string"))).toBe(true);
+    } finally {
+      append.mockRestore();
+      error.mockRestore();
+    }
+  });
+
   it("合法連結 → 寫入參考池(4 欄、平台小寫)+ 成功訊息", async () => {
     const storage = new MemoryStorage();
     const r = await runCollect(

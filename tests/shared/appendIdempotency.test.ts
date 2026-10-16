@@ -2,10 +2,11 @@
  * shell/of 共用 append 冪等護欄的整合契約。
  *
  * 同一組案例各跑兩個 storage adapter：每次重打前 fresh 查詢、已落表提早收手、
- * 查詢失敗不快取；另釘住空 dedupKey/VIDEO_ID 時退回原重試行為。
+ * 查詢失敗停止重打；另釘住空 dedupKey/VIDEO_ID 時退回原重試行為。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HeaderLayout } from "@pei760730/collector-core";
+import { isTransient } from "@pei760730/collector-core";
 import { GoogleSheetsStorage as ShellGoogleSheetsStorage } from "../../src/storage/googleSheets.js";
 import type { RefRow } from "../../src/types.js";
 import { GoogleSheetsStorage as OfGoogleSheetsStorage } from "../../src/engines/of/storage/googleSheets.js";
@@ -199,20 +200,26 @@ describe.each(TARGETS)("$name append 冪等護欄", ({ create }) => {
     expect(harness.guardReadCalls()).toBe(2);
   });
 
-  it("fresh 查詢失敗 → 不快取失敗，下一次重試再查", async () => {
-    let attempts = 0;
+  it("回應遺失且 fresh 查詢失敗 → 非暫態錯誤停止，真 append 只打一次", async () => {
+    const readFailure = new Error("ECONNRESET network socket hang up");
     const harness = create(async () => {
-      attempts += 1;
-      if (attempts < 3) throw rateLimit();
-      return appendSuccess();
+      throw new Error("ECONNRESET");
     }, async () => {
-      throw new Error("guard read failed");
+      throw readFailure;
     });
 
-    await settleRetries(harness.run);
+    // 舊語意會盲打 append：第一次可能已落表，讀不到不能當成尚未寫入。
+    vi.useFakeTimers();
+    const caught = harness.run().then(() => undefined, (error: unknown) => error);
+    await vi.runAllTimersAsync();
+    const failure = await caught;
 
-    expect(harness.appendCalls()).toBe(3);
-    expect(harness.guardReadCalls()).toBe(2);
+    expect(harness.appendCalls()).toBe(1);
+    expect(harness.guardReadCalls()).toBe(1);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("冪等護欄查詢失敗,為避免雙寫不重打 append");
+    expect((failure as Error).cause).toBe(readFailure);
+    expect(isTransient(failure)).toBe(false);
   });
 
   it("空 key → 不查 fresh keys，退回原本的 withRetry 行為", async () => {

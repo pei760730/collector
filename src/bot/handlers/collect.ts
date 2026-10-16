@@ -10,6 +10,7 @@ import type { Storage } from "../../storage/Storage.js";
 import { VOC_TARGET, type TargetSpec } from "../../targets.js";
 import { expandShortUrl as coreExpandShortUrl } from "../../utils/expandUrl.js";
 import { logger } from "../../utils/logger.js";
+import { errSummary } from "../../shared/errorSummary.js";
 
 // 同進程序列化 dedup→append,避免同一連結極短時間連發時兩條都過去重再雙寫。
 // (跨進程要靠單一 bot 實例;我們就是單實例 polling。)
@@ -98,7 +99,7 @@ export async function runCollect(
       await deps.storage.append(draft.row);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      logger.error("寫入參考池失敗", err);
+      logger.error(`寫入參考池失敗:${errSummary(err)}`);
       // 通知 drain:這筆沒寫成功(可重試)。常駐版沒給 callback → no-op,行為不變。
       deps.onPersistError?.();
       return {

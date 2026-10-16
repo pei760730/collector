@@ -61,8 +61,10 @@ export function createConfigLoader<
     const google = storage === "memory" ? null : options.loadGoogleConfig();
     const extension = options.loadExtension?.() ?? ({} as Extension);
 
-    // 指派時機維持既有 loadConfig：先組出 cached，再執行 fail-fast / warn guard。
-    cached = {
+    // 先組 local config、全部 guard 通過後才寫入 cached(2026-10-14 審計 F7):舊版先指派
+    // cached 再 fail-fast,若有呼叫端 catch 住錯誤再呼叫一次,會拿到「sheets + 空白名單」
+    // 的設定 = 防灌池閘門開著。
+    const config: SharedConfig<GoogleConfig> & Extension = {
       ...extension,
       telegramToken: required("TELEGRAM_BOT_TOKEN"),
       storage,
@@ -74,19 +76,20 @@ export function createConfigLoader<
     };
 
     // 公開 repo 防灌池：正式寫表必須限定來源；memory 乾跑維持可用空名單。
-    if (storage === "sheets" && cached.allowedChatIds.length === 0) {
+    if (storage === "sheets" && config.allowedChatIds.length === 0) {
       throw new Error(
         `STORAGE=sheets 但未設 ALLOWED_CHAT_IDS:正式寫表必須限定來源 chat id(逗號分隔純數字),否則公開後任何人都能灌你的${options.sheetsDestination}`,
       );
     }
 
     // 告警管道維持選配；sheets 模式未設時明講，但不阻止啟動。
-    if (storage === "sheets" && cached.errorChatId === "") {
+    if (storage === "sheets" && config.errorChatId === "") {
       logger.warn(
         "ERROR_CHAT_ID 未設,寫入失敗將無 Telegram 告警(只剩 collect.yml 紅燈/exit code)",
       );
     }
 
-    return cached;
+    cached = config;
+    return config;
   };
 }

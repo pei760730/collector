@@ -1,5 +1,6 @@
 /** of 專屬總表 gate 告警；共用 drain 迴圈在 ../../shared/drainLoop.ts。 */
 import { logger } from "./utils/logger.js";
+import { errSummary } from "../../shared/errorSummary.js";
 
 /**
  * 總表 gate 失效告警追蹤器(feed 專屬:svb/cc 無 gate)。
@@ -21,7 +22,7 @@ export function makeGateAlerter(
       pending = sendMessage(errorChatId, `🐞 ${detail}`).then(
         () => undefined,
         // 告警本身失敗不能拋出(不影響 drain 結果/exit code),記錄即可。
-        (e) => logger.error("通知 error chat 失敗", e),
+        (e) => logger.error(`通知 error chat 失敗:${errSummary(e)}`),
       );
     },
     async flush(): Promise<void> {

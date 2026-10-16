@@ -29,6 +29,7 @@ import { STAGING_COLUMNS } from "../types.js";
 import { computeStats } from "./computeStats.js";
 import { isRawReplay } from "./rawReplay.js";
 import { logger } from "../utils/logger.js";
+import { errSummary } from "../../../shared/errorSummary.js";
 import { appendWithIdempotencyGuard } from "../../../shared/appendIdempotency.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
@@ -220,7 +221,7 @@ export class GoogleSheetsStorage implements Storage {
       );
       header = (res.data.values?.[0] ?? []).map((cell) => String(cell ?? "").trim());
     } catch (err) {
-      logger.warn(`總表去重跳過:無法讀取分頁 ${this.prodSheetName}`, err);
+      logger.warn(`總表去重跳過:無法讀取分頁 ${this.prodSheetName}:${errSummary(err)}`);
       this.onGateSkip?.(`總表去重跳過:無法讀取分頁 ${this.prodSheetName}(擋回流 gate 失效,照常收錄)`);
       return new Set();
     }
@@ -254,7 +255,7 @@ export class GoogleSheetsStorage implements Storage {
       this.approvedCache = set;
       return set;
     } catch (err) {
-      logger.warn(`總表去重跳過:無法讀取 ${this.prodSheetName} 的「${PROD_URL_HEADER}」欄`, err);
+      logger.warn(`總表去重跳過:無法讀取 ${this.prodSheetName} 的「${PROD_URL_HEADER}」欄:${errSummary(err)}`);
       this.onGateSkip?.(`總表去重跳過:無法讀取 ${this.prodSheetName} 的「${PROD_URL_HEADER}」欄(擋回流 gate 失效,照常收錄)`);
       return new Set();
     }
