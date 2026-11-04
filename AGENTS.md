@@ -52,8 +52,8 @@ Codex 是這個 repo 的**工程管線 agent**:在 branch 上做可審查的 cod
 
 ## PR 流程(走 PR,單主題)
 
-- 開 branch → 單主題 → 跑驗證 → 開 PR → Owner review/merge → 刪 branch。
-- Codex 在 danger-full-access 下開的是 **draft PR**:整理好後要 `gh pr ready`,Owner 才 merge。
+- 開 branch → 單主題 → 跑驗證 → 開 PR → Claude+Codex 雙審、修到無阻擋+CI 綠 → 直接 squash merge(不等人工)→ 刪 branch。
+- Codex 在 danger-full-access 下開的是 **draft PR**:整理好後要 `gh pr ready`,交 Claude 審;雙審過即合,不等人工。
 - PR 只做單一主題,不混入無關 local diff / untracked / secrets / `dist` / `node_modules` 噪音。
 
 ## 驗證(宣稱完成前必跑,跑了什麼如實說)
