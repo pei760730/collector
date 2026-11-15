@@ -22,6 +22,7 @@ import { approvedGateKey } from "../../storage/approvedKey.js";
 import type { Storage } from "../../storage/Storage.js";
 import { logger } from "../../utils/logger.js";
 import { errSummary } from "../../../../shared/errorSummary.js";
+import { AppendVerificationError } from "../../../../shared/appendIdempotency.js";
 import {
   formatErrorMsg,
   savedMsg,
@@ -104,40 +105,44 @@ export async function runIngest(
   };
 
   return serialize(async () => {
-    // unsupported(raw_*)→ 原則直接存、不做 VIDEO_ID 查重(規格 §4.4「每貼必留一列」),
-    // 只擋下面的 abort 重領護欄。
-    if (!ex.unsupported) {
-      // 查 in-memory 去重索引 / 總表集合(單輪 drain 各只讀一次全表後快取,取代逐訊息全表掃描)。
-      const hit = (await deps.storage.videoIdIndex()).get(ex.videoId.trim());
-      if (hit) return { reply: duplicateMsg(hit.row) };
-
-      // 閘門鍵兩側都走 approvedGateKey(= groupKey ∘ cleanUrl):同一支片換分享形態
-      // (youtu.be ↔ watch?v=)或帶沒收錄過的新分享參數,都算同一把鍵、擋得住。
-      // 這裡一定抽得到 id(在 !ex.unsupported 分支內),所以鍵是 `平台_id` 不是路徑 fallback。
-      if ((await deps.storage.approvedKeySet()).has(approvedGateKey(row.CLEAN_URL))) {
-        return { reply: approvedDuplicateMsg(row.CLEAN_URL) };
-      }
-    } else {
-      // abort 重領護欄(2026-07-17 runtime audit MED:raw_ 列重領雙寫):raw_ 的 VIDEO_ID
-      // 帶「當下」timestamp,drain 中止後下次 cron 重領同一則訊息會產生新的 raw_<ts> →
-      // append 的 alreadyDone 護欄(以 VIDEO_ID 為鍵)擋不住,暫存區長出重複列。
-      // 這裡在寫入前對暫存區既有列做「CLEAN_URL 完全比對」,且雙重限定:
-      //   - 限既有列也是 raw_ 前綴:既有可解析列(tt_ 等)與 unsupported 新列語意不同,不互擋。
-      //   - 限同 DATE(同日):重領發生在下次 cron(分鐘級),幾乎必同日 → 擋得住;
-      //     跨日「主動重貼」仍留一列 —— 同日重複列五欄全同、零資訊,擋掉不虧;跨日那列
-      //     至少帶新 DATE(「又被分享了」的訊號),保住「每貼必留一列」的跨日語意。
-      //     代價:跨午夜的重領護欄失手 → 多一列重複給人工看(可見、可刪,比擋掉跨日重貼
-      //     的靜默丟失好)。
-      const hit = await deps.storage.findRawReplay(row.CLEAN_URL, row.DATE);
-      if (hit) return { reply: duplicateMsg(hit.row) };
-    }
-
+    let appending = false;
     try {
+      // unsupported(raw_*)→ 原則直接存、不做 VIDEO_ID 查重(規格 §4.4「每貼必留一列」),
+      // 只擋下面的 abort 重領護欄。
+      if (!ex.unsupported) {
+        // 查 in-memory 去重索引 / 總表集合(單輪 drain 各只讀一次全表後快取,取代逐訊息全表掃描)。
+        const hit = (await deps.storage.videoIdIndex()).get(ex.videoId.trim());
+        if (hit) return { reply: duplicateMsg(hit.row) };
+
+        // 閘門鍵兩側都走 approvedGateKey(= groupKey ∘ cleanUrl):同一支片換分享形態
+        // (youtu.be ↔ watch?v=)或帶沒收錄過的新分享參數,都算同一把鍵、擋得住。
+        // 這裡一定抽得到 id(在 !ex.unsupported 分支內),所以鍵是 `平台_id` 不是路徑 fallback。
+        if ((await deps.storage.approvedKeySet()).has(approvedGateKey(row.CLEAN_URL))) {
+          return { reply: approvedDuplicateMsg(row.CLEAN_URL) };
+        }
+      } else {
+        // abort 重領護欄(2026-07-17 runtime audit MED:raw_ 列重領雙寫):raw_ 的 VIDEO_ID
+        // 帶「當下」timestamp,drain 中止後下次 cron 重領同一則訊息會產生新的 raw_<ts> →
+        // append 的 alreadyDone 護欄(以 VIDEO_ID 為鍵)擋不住,暫存區長出重複列。
+        // 這裡在寫入前對暫存區既有列做「CLEAN_URL 完全比對」,且雙重限定:
+        //   - 限既有列也是 raw_ 前綴:既有可解析列(tt_ 等)與 unsupported 新列語意不同,不互擋。
+        //   - 限同 DATE(同日):重領發生在下次 cron(分鐘級),幾乎必同日 → 擋得住;
+        //     跨日「主動重貼」仍留一列 —— 同日重複列五欄全同、零資訊,擋掉不虧;跨日那列
+        //     至少帶新 DATE(「又被分享了」的訊號),保住「每貼必留一列」的跨日語意。
+        //     代價:跨午夜的重領護欄失手 → 多一列重複給人工看(可見、可刪,比擋掉跨日重貼
+        //     的靜默丟失好)。
+        const hit = await deps.storage.findRawReplay(row.CLEAN_URL, row.DATE);
+        if (hit) return { reply: duplicateMsg(hit.row) };
+      }
+
+      appending = true;
       await deps.storage.append(row);
     } catch (err) {
+      // 初次查重的錯誤維持原 router 分類；前次 append 未確認時則一律保留重領。
+      if (!appending && !(err instanceof AppendVerificationError)) throw err;
       const detail = err instanceof Error ? err.message : String(err);
       logger.error(`寫入暫存區失敗:${errSummary(err)}`);
-      // 通知 drain:這筆沒寫成功(可重試)。常駐版沒給 callback → no-op,行為不變。
+      // 查重讀取失敗也不能 ack：尚未確認持久化，留給下次 fresh 查證。
       deps.onPersistError?.();
       return {
         reply: saveErrorMsg(detail),

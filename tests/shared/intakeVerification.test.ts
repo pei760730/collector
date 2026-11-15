@@ -254,9 +254,9 @@ it.each(["of", "ofgay"] as const)("known %s boundary: the same unacked raw updat
   expect(s.appends).toBe(2);
 });
 
-// The production drain aborts and creates fresh storage next run. Retaining a failed
-// shell instance is a separate development/polling boundary, not crash-safe replay.
-it.each(["voc", "tbvoc"] as const)("known %s boundary: reusing the failed warm instance misses a terminal committed row", async (target) => {
+// A retained failed shell instance must refresh its index before retrying,
+// just as the next production drain's fresh instance verifies the committed row.
+it.each(["voc", "tbvoc"] as const)("%s: reusing the failed warm instance verifies the terminal committed row", async (target) => {
   const s = fixture(target);
   s.plan = ["before", "before", "before", "lost"];
   const c = consumer(target, s);
@@ -265,6 +265,7 @@ it.each(["voc", "tbvoc"] as const)("known %s boundary: reusing the failed warm i
   expect(c.persist.failed).toBe(true);
   expect(s.rows).toHaveLength(1);
   await settle(c.bot.handleUpdate(update()));
-  expect(s.rows).toHaveLength(2);
-  expect(s.appends).toBe(5);
+  expect(replies[1]).toContain("沒有重複寫入");
+  expect(s.rows).toHaveLength(1);
+  expect(s.appends).toBe(4);
 });

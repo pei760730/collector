@@ -25,7 +25,7 @@ import type { RefRow } from "../types.js";
 import { POOL_COLUMNS } from "../types.js";
 import type { TargetSpec } from "../targets.js";
 import { dedupKey } from "../pipeline/index.js";
-import { appendWithIdempotencyGuard } from "../shared/appendIdempotency.js";
+import { AppendVerificationError, appendWithIdempotencyGuard } from "../shared/appendIdempotency.js";
 import { computeStats } from "./computeStats.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
@@ -58,6 +58,7 @@ export class GoogleSheetsStorage implements Storage {
   private readonly sheetName: string;
   private layoutCache?: HeaderLayout;
   private dedupCache?: Map<string, RefRow>;
+  private appendNeedsVerification = false;
   private readonly columns: readonly (keyof RefRow)[];
   private readonly owner: TargetSpec["owner"];
   /**
@@ -173,7 +174,11 @@ export class GoogleSheetsStorage implements Storage {
   async dedupIndex(): Promise<Map<string, RefRow>> {
     if (this.dedupCache) return this.dedupCache;
     const index = new Map<string, RefRow>();
-    for (const h of await this.readRows()) {
+    const hits = await this.readRows().catch((err: unknown) => {
+      if (this.appendNeedsVerification) throw new AppendVerificationError(err);
+      throw err;
+    });
+    for (const h of hits) {
       const key = dedupKey(h.row.連結);
       if (!key) continue; // 空 key(連結空的壞列/人工殘留)不索引 —— 對齊 of videoIdIndex「空 key 不去重」
       // 同 key 多列(歷史殘留/人工貼入)→ 保第一筆:duplicateMsg 顯示「首次加入」,
@@ -181,6 +186,7 @@ export class GoogleSheetsStorage implements Storage {
       if (!index.has(key)) index.set(key, h.row);
     }
     this.dedupCache = index;
+    this.appendNeedsVerification = false;
     return index;
   }
 
@@ -200,6 +206,12 @@ export class GoogleSheetsStorage implements Storage {
           insertDataOption: "INSERT_ROWS",
           requestBody: { values: [placeRow(row as unknown as Record<string, unknown>, this.columns, layout)] },
         }),
+    }).catch((err: unknown) => {
+      // 最後一次 append 也可能已提交；下筆必須 fresh 查重，不能沿用失敗前的快照。
+      this.dedupCache = undefined;
+      this.rowByKey = undefined;
+      this.appendNeedsVerification = true;
+      throw err;
     });
     // 寫入成功 → 併入去重快取,讓同輪稍後的重複連結不必重讀全表也擋得到。
     if (key) this.dedupCache?.set(key, row);

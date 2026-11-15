@@ -11,6 +11,7 @@ import { VOC_TARGET, type TargetSpec } from "../../targets.js";
 import { expandShortUrl as coreExpandShortUrl } from "../../utils/expandUrl.js";
 import { logger } from "../../utils/logger.js";
 import { errSummary } from "../../shared/errorSummary.js";
+import { AppendVerificationError } from "../../shared/appendIdempotency.js";
 
 // 同進程序列化 dedup→append,避免同一連結極短時間連發時兩條都過去重再雙寫。
 // (跨進程要靠單一 bot 實例;我們就是單實例 polling。)
@@ -84,23 +85,27 @@ export async function runCollect(
   // 去重 + 寫入序列化,避免並發雙寫。去重靠連結即時推導的 key(全表比對、無時間窗,
   // 對齊 voc:參考池是永久池)。同連結(含同支影片不同形態)只收一次。
   return serialize(async () => {
-    // 去重查 in-memory 索引(單輪只讀一次全表建好、快取於 storage 實例),
-    // 不再每筆 readRows() 全表讀 —— 一輪 N 筆時 values.get 從 O(N) 降為 O(1)。
-    const index = await deps.storage.dedupIndex();
-    const hit = index.get(draft.dedupKey);
-    if (hit) {
-      // (tbvoc)已收過也讓他能(重)標夯度:帶同一支的 key。voc 不帶。
-      return target.hotValues
-        ? { reply: duplicateMsg(hit), hotKey: draft.dedupKey }
-        : { reply: duplicateMsg(hit) };
-    }
-
+    let appending = false;
     try {
+      // 去重查 in-memory 索引(單輪只讀一次全表建好、快取於 storage 實例),
+      // 不再每筆 readRows() 全表讀 —— 一輪 N 筆時 values.get 從 O(N) 降為 O(1)。
+      const index = await deps.storage.dedupIndex();
+      const hit = index.get(draft.dedupKey);
+      if (hit) {
+        // (tbvoc)已收過也讓他能(重)標夯度:帶同一支的 key。voc 不帶。
+        return target.hotValues
+          ? { reply: duplicateMsg(hit), hotKey: draft.dedupKey }
+          : { reply: duplicateMsg(hit) };
+      }
+
+      appending = true;
       await deps.storage.append(draft.row);
     } catch (err) {
+      // 初次查重的錯誤維持原 router 分類；前次 append 未確認時則一律保留重領。
+      if (!appending && !(err instanceof AppendVerificationError)) throw err;
       const detail = err instanceof Error ? err.message : String(err);
       logger.error(`寫入參考池失敗:${errSummary(err)}`);
-      // 通知 drain:這筆沒寫成功(可重試)。常駐版沒給 callback → no-op,行為不變。
+      // 查重讀取失敗也不能 ack：尚未確認持久化，留給下次 fresh 查證。
       deps.onPersistError?.();
       return {
         reply: saveErrorMsg(detail),
