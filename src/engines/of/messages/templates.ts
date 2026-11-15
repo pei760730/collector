@@ -60,5 +60,5 @@ export function approvedDuplicateMsg(cleanUrl: string): string {
 }
 
 export function saveErrorMsg(detail: string): string {
-  return ["❌ 寫入失敗,沒有存進暫存區。", `原因:${detail}`].join("\n");
+  return ["⚠️ 寫入失敗或回應遺失,是否已存進暫存區仍待查證。", `原因:${detail}`].join("\n");
 }
