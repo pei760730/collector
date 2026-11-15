@@ -30,7 +30,7 @@ import { computeStats } from "./computeStats.js";
 import { isRawReplay } from "./rawReplay.js";
 import { logger } from "../utils/logger.js";
 import { errSummary } from "../../../shared/errorSummary.js";
-import { appendWithIdempotencyGuard } from "../../../shared/appendIdempotency.js";
+import { AppendVerificationError, appendWithIdempotencyGuard } from "../../../shared/appendIdempotency.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
@@ -60,6 +60,7 @@ export class GoogleSheetsStorage implements Storage {
   // 單輪 drain 的去重索引/總表集合快取(每實例一份;drain 每輪新建實例)。
   private videoIdCache?: Map<string, DuplicateHit>;
   private rawReplayCache?: DuplicateHit[];
+  private appendNeedsVerification = false;
   private approvedCache?: Set<string>;
 
   constructor(opts: GoogleSheetsOptions) {
@@ -173,7 +174,11 @@ export class GoogleSheetsStorage implements Storage {
     const layout = await this.layout();
     const index = new Map<string, DuplicateHit>();
     const rawCandidates: DuplicateHit[] = [];
-    for (const { rowNumber, cells } of await this.rawRows(layout)) {
+    const rows = await this.rawRows(layout).catch((err: unknown) => {
+      if (this.appendNeedsVerification) throw new AppendVerificationError(err);
+      throw err;
+    });
+    for (const { rowNumber, cells } of rows) {
       const row = readNamedRow(cells, STAGING_COLUMNS, layout) as unknown as StagingRow;
       const key = row.VIDEO_ID.trim();
       if (!key) continue;
@@ -182,6 +187,7 @@ export class GoogleSheetsStorage implements Storage {
     }
     this.videoIdCache = index;
     this.rawReplayCache = rawCandidates;
+    this.appendNeedsVerification = false;
   }
 
   async findRawReplay(cleanUrl: string, date: string): Promise<DuplicateHit | null> {
@@ -309,8 +315,9 @@ export class GoogleSheetsStorage implements Storage {
       videoId = guarded.key;
       appended = guarded.result;
     } catch (err) {
-      // 最後一次嘗試仍可能已提交；下筆 raw replay 必須重讀，error / ack 規則不變。
-      if (row.VIDEO_ID.startsWith("raw_")) this.invalidateStagingIndexes();
+      // 最後一次嘗試仍可能已提交；raw 與非 raw 的下筆查重都必須重讀。
+      this.invalidateStagingIndexes();
+      this.appendNeedsVerification = true;
       throw err;
     }
 

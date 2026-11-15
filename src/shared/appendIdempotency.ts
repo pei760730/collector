@@ -29,6 +29,14 @@ export interface IdempotentAppendResult<Result> {
 /** 護欄查詢失敗時丟出的錯誤訊息(刻意不含 ECONNRESET/network 等字樣,core isTransient 才會判非暫態)。 */
 export const GUARD_FAILURE_MESSAGE = "冪等護欄查詢失敗,為避免雙寫不重打 append";
 
+/** 前次 append 結果未確認，後續目的地查證仍失敗；不能依錯誤暫態性決定 ack。 */
+export class AppendVerificationError extends Error {
+  constructor(cause: unknown) {
+    super("前次寫入結果仍待查證，目的地讀取失敗", { cause });
+    this.name = "AppendVerificationError";
+  }
+}
+
 /**
  * 執行非冪等 append，並在暫態錯誤重試前確認前一次是否其實已落表。
  *
