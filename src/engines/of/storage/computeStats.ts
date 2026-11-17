@@ -22,8 +22,8 @@ export function computeStats(
     byStatus[s] = (byStatus[s] ?? 0) + 1;
 
     const age = ageInDays(r.DATE, opts.nowMs);
-    if (age <= 7) addedThisWeek++;
-    if (age <= 30) addedThisMonth++;
+    if (age >= 0 && age <= 7) addedThisWeek++;
+    if (age >= 0 && age <= 30) addedThisMonth++;
   }
 
   // 最近 N 筆 = 檔尾(append 在尾端,愈後面愈新),反轉成由新到舊。
