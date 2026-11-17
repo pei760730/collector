@@ -18,8 +18,8 @@ export function computeStats(
     byPlatform[p] = (byPlatform[p] ?? 0) + 1;
 
     const age = ageInDays(r.加入日期, opts.nowMs);
-    if (age <= 7) addedThisWeek++;
-    if (age <= 30) addedThisMonth++;
+    if (age >= 0 && age <= 7) addedThisWeek++;
+    if (age >= 0 && age <= 30) addedThisMonth++;
   }
 
   // 最近 N 筆 = 檔尾(append 在尾端,愈後面愈新)
