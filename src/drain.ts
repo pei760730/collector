@@ -18,8 +18,7 @@ import { loadConfig } from "./config.js";
 import { getTarget, isOfTarget } from "./targets.js";
 import { runDrain } from "./drainRun.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
-import { MemoryStorage } from "./storage/memory.js";
-import type { Storage } from "./storage/Storage.js";
+import { requireDrainGoogleConfig } from "./shared/configSafety.js";
 import { logger } from "./utils/logger.js";
 import { logFatal } from "./shared/errorSummary.js";
 
@@ -28,20 +27,14 @@ async function main(): Promise<number> {
   const target = getTarget(config.target);
   // DATE / 去重窗一律 Asia/Taipei(utils/date.ts 寫死),不靠 process.env.TZ。
 
-  let storage: Storage;
-  if (config.storage === "memory") {
-    storage = new MemoryStorage();
-    logger.warn("STORAGE=memory 乾跑:不寫真表,只驗領取/處理流程");
-  } else {
-    if (!config.google) throw new Error("sheets 模式缺 Google 設定");
-    storage = new GoogleSheetsStorage({
-      credentials: config.google.credentials,
-      sheetId: config.google.sheetId,
-      sheetName: config.google.poolSheetName,
-      columns: target.columns,
-      owner: target.owner,
-    });
-  }
+  const google = requireDrainGoogleConfig(config);
+  const storage = new GoogleSheetsStorage({
+    credentials: google.credentials,
+    sheetId: google.sheetId,
+    sheetName: google.poolSheetName,
+    columns: target.columns,
+    owner: target.owner,
+  });
   logger.info(`drain target=${target.name}`);
   return runDrain(config, storage, target);
 }
