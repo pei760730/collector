@@ -25,33 +25,26 @@ import {
 import { callTelegramWithRetry } from "../../shared/telegramRetry.js";
 import { makeGateAlerter } from "./drainLoop.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
-import { MemoryStorage } from "./storage/memory.js";
-import type { Storage } from "./storage/Storage.js";
+import { requireDrainGoogleConfig } from "../../shared/configSafety.js";
 import { logger } from "./utils/logger.js";
 import { logFatal } from "../../shared/errorSummary.js";
 
 async function main(): Promise<DrainResult> {
   const config = loadConfig();
+  const google = requireDrainGoogleConfig(config);
   // DATE 一律 Asia/Taipei(utils/date.ts 寫死),不靠 process.env.TZ。
 
   // 總表 gate 失效告警:先宣告、bot 建立後才綁定(gate 只在 handleUpdate 期間觸發,屆時 bot 已在)。
   let sendGateAlert: (detail: string) => void = () => {};
   let flushGateAlert: () => Promise<void> = async () => {};
 
-  let storage: Storage;
-  if (config.storage === "memory") {
-    storage = new MemoryStorage();
-    logger.warn("STORAGE=memory 乾跑:不寫真表,只驗領取/處理流程");
-  } else {
-    if (!config.google) throw new Error("sheets 模式缺 Google 設定");
-    storage = new GoogleSheetsStorage({
-      credentials: config.google.credentials,
-      sheetId: config.google.sheetId,
-      sheetName: config.google.stagingSheetName,
-      prodSheetName: config.google.prodSheetName,
-      onGateSkip: (detail) => sendGateAlert(detail),
-    });
-  }
+  const storage = new GoogleSheetsStorage({
+    credentials: google.credentials,
+    sheetId: google.sheetId,
+    sheetName: google.stagingSheetName,
+    prodSheetName: google.prodSheetName,
+    onGateSkip: (detail) => sendGateAlert(detail),
+  });
   await storage.ensureHeader();
 
   // persist.failed:某筆寫入暫存區失敗(可重試)的 side-channel 旗標。每筆處理前歸零,

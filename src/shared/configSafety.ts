@@ -31,6 +31,19 @@ export interface SharedConfig<GoogleConfig> {
   logLevel: string;
 }
 
+/** 生產 drain 不可在資料未持久化時向 Telegram 確認更新；開發與離線測試不走這個閘。 */
+export function requireDrainGoogleConfig<GoogleConfig>(
+  config: Pick<SharedConfig<GoogleConfig>, "storage" | "google">,
+): GoogleConfig {
+  if (config.storage === "memory") {
+    throw new Error(
+      "STORAGE=memory 不支援 drain：Telegram 更新會被確認，但資料不會持久化。正式收集請用 STORAGE=sheets；離線驗證請用 npm test。",
+    );
+  }
+  if (!config.google) throw new Error("sheets 模式缺 Google 設定");
+  return config.google;
+}
+
 export interface ConfigLoaderOptions<GoogleConfig, Extension extends object> {
   /** fail-fast 訊息中的實際寫入目的地；只影響既有 target-specific 文案。 */
   sheetsDestination: string;
