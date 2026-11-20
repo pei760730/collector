@@ -164,6 +164,11 @@ function otherCount(t: DrainTally): number {
  * result = null 代表迴圈中途 reject(領取/確認更新失敗)。四種開頭各自不同;
  * 「寫入」只計確認寫入成功的(append 已落表才丟錯的那筆以表為準,摘要不計):
  *   drain 完成 / drain 有訊息失敗未寫入 / drain 中止 / drain 中斷
+ *
+ * 文字紀律:只用肯定句講「這一輪程式親眼看到的」(送出寫入且成功、哪些 getUpdates 成功、
+ * 哪一步丟錯、這一輪沒對某則送出寫入);表上現況、Telegram 伺服器端狀態、下一輪會怎樣、
+ * 該不該重貼,一律條件句或「請核對」。「失敗未寫入」= 這一輪在寫入前出錯、沒對它送出寫入,
+ * 不等於「表上沒有」(例如上一輪其實已寫入,這一輪去重讀取失敗)。
  */
 export function formatDrainSummary(result: DrainResult | null, t: DrainTally): string {
   const counts = `寫入 ${t.saved}、重複 ${t.duplicate}、失敗未寫入 ${t.unwritten}、其他 ${otherCount(t)}`;
@@ -177,21 +182,21 @@ export function formatDrainSummary(result: DrainResult | null, t: DrainTally): s
   // 共用摘要不知道自己是哪個 target,措辭要對所有 target 都成立。
   const abortedUnackedNote =
     unacked > 0
-      ? `;其中 ${unacked} 筆因中止沒送出確認,尚未確認,下輪會重領,去重通常會擋`
+      ? `;其中 ${unacked} 筆因中止沒送出確認,尚未確認,下輪會重領(Telegram 約保留 24 小時),去重通常會擋`
       : "";
   const uncertainUnwritten = t.unwritten - t.ackedUnwritten; // 確認結果不明那段裡的未寫入
   const uncertainNote =
     unacked > 0
       ? `;其中 ${unacked} 筆的確認結果不明(Telegram 沒回應成功):若未確認,下輪會重領,去重通常會擋;若其實已確認,就不會再領` +
         (uncertainUnwritten > 0
-          ? `;這 ${unacked} 筆裡有 ${uncertainUnwritten} 筆未寫入:若其實已被確認收走就不會重領,請核對表上有沒有,沒有就重新操作(請重貼連結)`
+          ? `;這 ${unacked} 筆裡有 ${uncertainUnwritten} 筆這一輪沒有寫入(寫入前出錯):若其實已被確認收走就不會重領,請核對表上有沒有,沒有再重貼連結`
           : "")
       : "";
   // 先前批次已被確認收走、沒寫進表的筆數:跟「未確認段」是兩件事,兩者可同時成立,
   // 所以中斷/中止/收尾三種摘要都要各自帶出。
   const lostNote =
     t.ackedUnwritten > 0
-      ? `;其中 ${t.ackedUnwritten} 筆失敗未寫入、已被確認收走、不會重領,需重新操作(請重貼連結)`
+      ? `;其中 ${t.ackedUnwritten} 筆這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領;表上可能已有同一則(例如上一輪已寫入),請先核對,沒有再重貼連結`
       : "";
   if (result === null) {
     return t.processed === 0

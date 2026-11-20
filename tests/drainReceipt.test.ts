@@ -16,6 +16,7 @@ import { MemoryStorage } from "../src/storage/memory.js";
 import { VOC_TARGET, TBVOC_TARGET } from "../src/targets.js";
 import type { Config } from "../src/config.js";
 import type { RefRow } from "../src/types.js";
+import { AppendVerificationError } from "../src/shared/appendIdempotency.js";
 
 function memoryConfig(overrides: Partial<Config> = {}): Config {
   return {
@@ -244,11 +245,11 @@ describe("寫入失敗中止:摘要也帶分項與未確認筆數", () => {
 });
 
 /** 多批:批 1 有一則碰到非暫態錯誤(被確認收走、沒寫入),之後才出事 —— 兩件事都要看得到。 */
-const LOST_NOTE = "1 筆失敗未寫入、已被確認收走、不會重領";
-const REDO_HINT = "需重新操作(請重貼連結)";
+const LOST_NOTE = "1 筆這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領";
+const REDO_HINT = "請先核對,沒有再重貼連結";
 
 describe("多批:先前批次有「已確認收走但沒寫入」,後面又中斷/中止 → 摘要兩件事都帶", () => {
-  it("(voc)批 2 的確認 getUpdates 失敗 → 中斷行同時有「1 筆確認結果不明」與「1 筆失敗未寫入、已被確認收走」", async () => {
+  it("(voc)批 2 的確認 getUpdates 失敗 → 中斷行同時有「1 筆確認結果不明」與「1 筆這一輪沒有寫入、已被確認收走」", async () => {
     const storage = new IndexBrokenOnCall(new Set([1])); // 批 1 的 link(1) 非暫態失敗
     script = [[textUpdate(1, link(1))], [textUpdate(2, link(2))], conflict409()];
     await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
@@ -264,7 +265,7 @@ describe("多批:先前批次有「已確認收走但沒寫入」,後面又中�
     expect(lines[0]).toContain(REDO_HINT);
   });
 
-  it("(voc)批 2 某筆 append 暫時失敗而中止 → 中止行同時有「1 筆沒送出確認」與「1 筆失敗未寫入、已被確認收走」,exit 2", async () => {
+  it("(voc)批 2 某筆 append 暫時失敗而中止 → 中止行同時有「1 筆沒送出確認」與「1 筆這一輪沒有寫入、已被確認收走」,exit 2", async () => {
     class BrokenIndexThenAppendFails extends IndexBrokenOnCall {
       appends = 0;
       override async append(row: RefRow): Promise<void> {
@@ -287,7 +288,7 @@ describe("多批:先前批次有「已確認收走但沒寫入」,後面又中�
     expect(lines[0]).toContain(REDO_HINT);
   });
 
-  it("單批 B 的說法:需重新操作(請重貼連結)", async () => {
+  it("單批 B 的說法:只講本輪確知的事,請先核對、沒有再重貼連結", async () => {
     const storage = new IndexBrokenOnCall(new Set([1]));
     script = [[textUpdate(1, link(1))]];
     expect(await runDrain(memoryConfig(), storage, VOC_TARGET)).toBe(3);
@@ -307,7 +308,7 @@ describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數
     expect(line).toContain("已處理 3 筆");
     expect(line).toContain("失敗未寫入 2"); // N
     expect(line).toContain("其中 2 筆的確認結果不明"); // M(批 2 全部)
-    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走"); // K(只有批 1 那筆)
+    expect(line).toContain("其中 1 筆這一輪沒有寫入(寫入前出錯)、已被確認收走"); // K(只有批 1 那筆)
     expect(line).not.toContain("其中 2 筆失敗未寫入");
   });
 
@@ -327,7 +328,7 @@ describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數
     expect(line).toContain("已處理 2 筆");
     expect(line).toContain("失敗未寫入 2"); // N
     expect(line).toContain("其中 1 筆因中止沒送出確認"); // M(批 2 的 u2)
-    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走"); // K(批 1 的 u1)
+    expect(line).toContain("其中 1 筆這一輪沒有寫入(寫入前出錯)、已被確認收走"); // K(批 1 的 u1)
     expect(line).not.toContain("其中 2 筆失敗未寫入");
   });
 
@@ -342,8 +343,8 @@ describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數
     expect(line).toContain("失敗未寫入 1");
     expect(line).toContain("其中 2 筆的確認結果不明");
     // 同批未寫入還沒被確認:不是 K。但屬於「確認結果不明」那段,要被點名(U=1)。
-    expect(line).not.toContain("筆失敗未寫入、已被確認收走、不會重領");
-    expect(line).toContain("有 1 筆未寫入");
+    expect(line).not.toContain("筆這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領");
+    expect(line).toContain("有 1 筆這一輪沒有寫入");
     expect(line).toContain("請核對表上有沒有");
   });
 });
@@ -373,11 +374,11 @@ describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」�
       expect(lines[0]).toContain("1 筆的確認結果不明");
       expect(lines[0]).toContain("若未確認,下輪會重領");
       expect(lines[0]).toContain("若其實已確認,就不會再領");
-      expect(lines[0]).toContain("有 1 筆未寫入");
+      expect(lines[0]).toContain("有 1 筆這一輪沒有寫入");
       expect(lines[0]).toContain("請核對表上有沒有");
       expect(lines[0]).not.toContain("尚未被 Telegram 確認");
       expect(lines[0]).not.toContain("不會加倍");
-      expect(lines[0]).not.toContain("筆失敗未寫入、已被確認收走、不會重領"); // 這筆不確定,不是 K
+      expect(lines[0]).not.toContain("筆這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領"); // 這筆不確定,不是 K
 
       // 下一輪 drain 用同一個伺服器:那則真的不會再被領到,表上也沒有 → 正是摘要要 Owner 去核對的情況
       logged.length = 0;
@@ -443,5 +444,39 @@ describe("夯度按鈕(tbvoc)的寫入結果不在回條分項內", () => {
     expect(lines[0]).toContain("失敗未寫入 0");
     expect(lines[0]).toContain("其他 1");
     expect(lines[0]).not.toContain("已被確認收走");
+  });
+});
+
+describe("跨兩輪:上一輪其實已落表(結果不明→中止),這一輪去重讀取非暫態失敗而被收走", () => {
+  it("(voc)第 2 輪摘要不得斷言「表上沒有」,要請先核對;表上仍是 1 列;exit 3", async () => {
+    class LandedThenUncertain extends MemoryStorage {
+      round = 1;
+      override async append(row: RefRow): Promise<void> {
+        await super.append(row); // 其實已落表
+        throw new AppendVerificationError(new Error("synthetic: 前次寫入結果待查證")); // 但結果不明
+      }
+      override async dedupIndex(): Promise<Map<string, RefRow>> {
+        if (this.round === 2) {
+          throw Object.assign(new Error("Unable to parse range (synthetic non-transient 400)"), { code: 400 });
+        }
+        return super.dedupIndex();
+      }
+    }
+    const storage = new LandedThenUncertain();
+    script = [[textUpdate(1, link(1))]];
+    expect(await runDrain(memoryConfig(), storage, VOC_TARGET)).toBe(2); // 第 1 輪:中止
+    expect(await storage.readAll()).toHaveLength(1);
+
+    logged.length = 0;
+    storage.round = 2;
+    script = [[textUpdate(1, link(1))]]; // 重領同一則
+    expect(await runDrain(memoryConfig(), storage, VOC_TARGET)).toBe(3);
+    expect(await storage.readAll()).toHaveLength(1); // 表上其實有那一列
+    const line = summaryLines()[0]!;
+    expect(line).toContain("這一輪沒有寫入(寫入前出錯)");
+    expect(line).toContain("表上可能已有同一則");
+    expect(line).toContain("請先核對");
+    expect(line).not.toContain("沒寫進表");
+    expect(line).not.toContain("需重新操作");
   });
 });

@@ -13,6 +13,7 @@ import { logger } from "@pei760730/collector-core";
 import { createBot } from "../../src/engines/of/bot/router.js";
 import { MemoryStorage } from "../../src/engines/of/storage/memory.js";
 import type { Config } from "../../src/engines/of/config.js";
+import { AppendVerificationError } from "../../src/shared/appendIdempotency.js";
 import {
   drainHooks,
   drainWithTally,
@@ -160,8 +161,8 @@ describe("of 引擎:共用迴圈回條", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("drain 中斷");
     expect(lines[0]).toContain("1 筆的確認結果不明");
-    expect(lines[0]).toContain("1 筆失敗未寫入、已被確認收走、不會重領");
-    expect(lines[0]).toContain("需重新操作(請重貼連結)");
+    expect(lines[0]).toContain("1 筆這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領");
+    expect(lines[0]).toContain("請先核對,沒有再重貼連結");
   });
 
   it("raw_ 同日重領(findRawReplay 命中)與已核准閘門命中,都記成「重複」而不是「其他」", async () => {
@@ -178,6 +179,42 @@ describe("of 引擎:共用迴圈回條", () => {
     expect(line).toContain("寫入 1");
     expect(line).toContain("重複 2");
     expect(line).toContain("其他 0");
+  });
+
+  it("跨兩輪:上一輪其實已落表(結果不明→中止),這一輪去重讀取非暫態失敗而被收走 → 摘要請先核對,表上仍 1 列", async () => {
+    class LandedThenUncertain extends MemoryStorage {
+      round = 1;
+      override async append(row: Parameters<MemoryStorage["append"]>[0]): Promise<void> {
+        await super.append(row); // 其實已落表
+        throw new AppendVerificationError(new Error("synthetic: 前次寫入結果待查證")); // 但結果不明
+      }
+      override async videoIdIndex(): Promise<Awaited<ReturnType<MemoryStorage["videoIdIndex"]>>> {
+        if (this.round === 2) {
+          throw Object.assign(new Error("Unable to parse range (synthetic non-transient 400)"), { code: 400 });
+        }
+        return super.videoIdIndex();
+      }
+    }
+    const storage = new LandedThenUncertain();
+    const h1 = harness(storage, [[textUpdate(1, link(1))]]);
+    const first = await drainWithTally(h1.fake as never, h1.persist, "暫存區");
+    expect(first.result.aborted).toBe(true);
+    expect(exitCodeFor(first.result, first.tally)).toBe(2);
+    expect((await MemoryStorage.prototype.videoIdIndex.call(storage)).size).toBe(1);
+
+    logged.length = 0;
+    storage.round = 2;
+    const h2 = harness(storage, [[textUpdate(1, link(1))]]);
+    const second = await drainWithTally(h2.fake as never, h2.persist, "暫存區");
+    logDrainSummary(second.result, second.tally);
+    expect(exitCodeFor(second.result, second.tally)).toBe(3);
+    expect((await MemoryStorage.prototype.videoIdIndex.call(storage)).size).toBe(1); // 表上其實有那一列
+    const line = summaryLines()[0]!;
+    expect(line).toContain("這一輪沒有寫入(寫入前出錯)");
+    expect(line).toContain("表上可能已有同一則");
+    expect(line).toContain("請先核對");
+    expect(line).not.toContain("沒寫進表");
+    expect(line).not.toContain("需重新操作");
   });
 
   it("沒跑:第一次 getUpdates 就失敗 → 已處理 0 筆,且不含「確認結果不明」", async () => {

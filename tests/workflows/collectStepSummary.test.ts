@@ -51,8 +51,8 @@ describe("collect.yml Step Summary:多批時「未確認段」與「已被收走
     const label = summary.split("\n")[1]!;
     expect(label).toContain("確認結果不明");
     expect(label).not.toContain("下輪重領,去重");
-    expect(label).toContain("另有已被確認收走");
-    expect(label).toContain("請重貼連結");
+    expect(label).toContain("另有這一輪沒有寫入就被確認收走");
+    expect(label).toContain("請先核對,沒有再重貼連結");
   });
   it("中止:標籤講因中止沒送出確認、下輪重領 + 已被確認收走需重新操作", () => {
     const { status, summary } = runStep(
@@ -62,8 +62,8 @@ describe("collect.yml Step Summary:多批時「未確認段」與「已被收走
     const label = summary.split("\n")[1]!;
     expect(label).toContain("因中止沒送出確認");
     expect(label).toContain("下輪重領");
-    expect(label).toContain("另有已被確認收走");
-    expect(label).toContain("請重貼連結");
+    expect(label).toContain("另有這一輪沒有寫入就被確認收走");
+    expect(label).toContain("請先核對,沒有再重貼連結");
   });
   it("中斷但沒有 K、只有 U(確認結果不明段裡有未寫入):標籤提醒核對表,且不誤報成 K", () => {
     const { summary } = runStep(
@@ -72,7 +72,7 @@ describe("collect.yml Step Summary:多批時「未確認段」與「已被收走
     const label = summary.split("\n")[1]!;
     expect(label).toContain("確認結果不明");
     expect(label).toContain("請核對表上有沒有");
-    expect(label).not.toContain("另有已被確認收走");
+    expect(label).not.toContain("另有這一輪沒有寫入就被確認收走");
   });
 });
 
@@ -125,10 +125,11 @@ describe("collect.yml job 層失敗通知:每種收尾下文字各自為真", ()
     const clause = failureTexts[i]!.split(/[;;]/).find((c) => c.includes("drain 中斷"));
     expect(clause).toBeDefined();
     expect(clause).toContain("drain 中止");
-    expect(clause).toContain("已被確認收走、不會重領");
-    expect(clause).toContain("中止的未確認段下輪會自動重領");
+    expect(clause).toContain("這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領");
+    expect(clause).toContain("中止的未確認段沒送出確認");
+    expect(clause).toContain("下輪會自動重領");
     expect(clause).toContain("中斷的未確認段確認結果不明");
-    expect(clause).toContain("重新操作");
+    expect(clause).toContain("請先核對");
     expect(clause).not.toContain("不用重跑");
     expect(clause).not.toContain("佇列已排空");
   });
@@ -154,7 +155,7 @@ describe("collect.yml Step Summary:各種收尾各自顯示不同文字", () => 
         { processed: 3, aborted: false },
         tally({ processed: 3, unwritten: 3, acked: 3, ackedUnwritten: 3 }),
       ),
-      "🔴 有訊息被確認收走但沒寫進表",
+      "🔴 有訊息這一輪沒有寫入(寫入前出錯)就被確認收走",
     ],
     [
       "中止(寫入失敗)",
@@ -192,5 +193,34 @@ describe("collect.yml Step Summary:各種收尾各自顯示不同文字", () => 
     const noLine = runStep("[x] ERROR drain 失敗:boom\n");
     expect(noLine.status).toBe(0);
     expect(noLine.summary).toContain("沒有「已處理」行");
+  });
+});
+
+describe("collect.yml 標籤與失敗通知:不把推論寫成肯定句", () => {
+  const variants: Array<[string, string]> = [
+    ["純 B", formatDrainSummary({ processed: 1, aborted: false }, tally({ processed: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 }))],
+    ["中止+K", formatDrainSummary({ processed: 2, aborted: true }, tally({ processed: 2, saved: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 }))],
+    ["中斷+K+U", formatDrainSummary(null, tally({ processed: 3, unwritten: 2, acked: 1, ackedUnwritten: 1 }))],
+  ];
+  it.each(variants)("%s:標籤不斷言「沒寫進表」,且提到被收走的未寫入時請先核對", (_n, line) => {
+    const { summary } = runStep(stamp(line));
+    const label = summary.split("\n")[1]!;
+    expect(label).not.toContain("沒寫進表");
+    expect(label).not.toContain("需重新操作");
+    expect(label).toContain("這一輪沒有寫入");
+    expect(label).toContain("表上可能已有同一則");
+    expect(label).toContain("請先核對");
+  });
+
+  it("failure 通知文字:被收走的那些只說「請先核對,沒有再重貼連結」,不命令重新操作", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+    const block = workflow.slice(workflow.indexOf("  notify-broken:"));
+    const texts = [...block.matchAll(/\|\| '([^']*不用重跑[^']*)'/g)].map((m) => m[1]!);
+    expect(texts).toHaveLength(2);
+    for (const t of texts) {
+      expect(t).not.toContain("沒寫進表");
+      expect(t).not.toContain("重新操作");
+      expect(t).toContain("請先核對");
+    }
   });
 });

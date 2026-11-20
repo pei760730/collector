@@ -268,8 +268,8 @@ describe("formatDrainSummary:U(確認結果不明段裡的未寫入)與 K(已被
     });
     expect(line).toContain("失敗未寫入 3"); // N
     expect(line).toContain("其中 3 筆的確認結果不明"); // M
-    expect(line).toContain("這 3 筆裡有 2 筆未寫入"); // U
-    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走、不會重領"); // K
+    expect(line).toContain("這 3 筆裡有 2 筆這一輪沒有寫入"); // U
+    expect(line).toContain("其中 1 筆這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領"); // K
     expect(line).not.toContain("有 3 筆未寫入");
     expect(line).not.toContain("有 1 筆未寫入");
   });
@@ -284,8 +284,24 @@ describe("formatDrainSummary:U(確認結果不明段裡的未寫入)與 K(已被
       ackedUnwritten: 1,
     });
     expect(line).toContain("其中 1 筆的確認結果不明");
-    expect(line).not.toContain("筆未寫入:");
+    expect(line).not.toContain("筆這一輪沒有寫入(寫入前出錯):");
     expect(line).not.toContain("請核對表上有沒有");
-    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走、不會重領");
+    expect(line).toContain("其中 1 筆這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領");
+  });
+});
+
+describe("formatDrainSummary:推論不得寫成肯定句(表上現況、重領、該不該重貼)", () => {
+  const variants = [
+    ["純 B", { processed: 1, aborted: false }, { processed: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 }],
+    ["中止+K", { processed: 2, aborted: true }, { processed: 2, saved: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 }],
+    ["中斷+K+U", null, { processed: 3, unwritten: 2, acked: 1, ackedUnwritten: 1 }],
+    ["中斷+U", null, { processed: 1, unwritten: 1 }],
+  ] as const;
+  it.each(variants)("%s:不斷言「表上沒有」、不命令重新操作;提到未寫入時一定有「核對」", (_n, result, over) => {
+    const line = formatDrainSummary(result, { ...newDrainTally(), ...over });
+    expect(line).not.toContain("沒寫進表");
+    expect(line).not.toContain("需重新操作");
+    expect(line).not.toContain("失敗未寫入、已被確認收走");
+    expect(line).toMatch(/請(先)?核對/);
   });
 });
