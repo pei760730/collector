@@ -1,6 +1,6 @@
 /**
  * collect.yml 的 Step Summary:拿 drainLoop 真的會印的收尾行(formatDrainSummary)餵給
- * workflow 裡真的那段 bash,釘住「完成 / 有訊息失敗未寫入 / 中止 / 已寫入但沒回條 / 沒跑 /
+ * workflow 裡真的那段 bash,釘住「完成 / 有訊息失敗未寫入 / 中止 / 已處理但沒回條 / 沒跑 /
  * 沒有收尾行」各自顯示不同標籤,且 step 永遠綠(exit 0)。
  */
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -39,6 +39,33 @@ function runStep(logContent: string | null) {
 const tally = (over: Partial<DrainTally>): DrainTally => ({ ...newDrainTally(), ...over });
 const stamp = (line: string) => `[2026-11-21T00:00:00.000Z] INFO ${line}\n`;
 
+describe("collect.yml Step Summary:多批時「會重領」與「已被收走需重新操作」兩件事同時顯示", () => {
+  const lost = { processed: 2, saved: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 };
+  it.each([
+    ["中斷", formatDrainSummary(null, tally(lost))],
+    ["中止", formatDrainSummary({ processed: 2, aborted: true }, tally(lost))],
+  ])("%s:標籤同時含未確認段重領與已被確認收走需重新操作", (_n, line) => {
+    const { status, summary } = runStep(stamp(line));
+    expect(status).toBe(0);
+    const label = summary.split("\n")[1]!;
+    expect(label).toContain("下輪重領");
+    expect(label).toContain("已被確認收走");
+    expect(label).toContain("連結重貼、夯度重按");
+  });
+});
+
+describe("collect.yml job 層失敗通知:不再無條件說「佇列沒排空、需要重跑」", () => {
+  it("failure 分支的文字提示:收尾行寫「已被確認收走」= 佇列已排空、重跑領不回", () => {
+    const workflow = readFileSync(workflowPath, "utf8");
+    const block = workflow.slice(workflow.indexOf("  notify-broken:"));
+    const failureText = block.match(/\|\| '(🔴 collector drain 失敗[^']*)'/)?.[1] ?? "";
+    expect(failureText).toContain("已被確認收走");
+    expect(failureText).toContain("不用重跑");
+    // 公共尾巴不得再把「需要重跑」套在 failure 上(cancelled 分支才保留)
+    expect(block).not.toMatch(/\}\} —— 這輪抓片佇列沒排空,需要重跑 —/);
+  });
+});
+
 describe("collect.yml Step Summary:各種收尾各自顯示不同文字", () => {
   const cases: Array<[string, string, string]> = [
     [
@@ -62,7 +89,7 @@ describe("collect.yml Step Summary:各種收尾各自顯示不同文字", () => 
     [
       "A 已寫入但沒回條",
       formatDrainSummary(null, tally({ processed: 2, saved: 2 })),
-      "🔴 已寫入但沒回條",
+      "🔴 有更新已處理但沒回條",
     ],
     ["沒跑(一筆都沒領到)", formatDrainSummary(null, tally({})), "🔴 沒跑:一筆都沒領到"],
   ];

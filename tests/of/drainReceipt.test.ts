@@ -142,6 +142,27 @@ describe("of 引擎:共用迴圈回條", () => {
     expect(await storage.videoIdIndex()).toHaveProperty("size", 2);
   });
 
+  it("多批:批 1 有「已確認收走但沒寫入」,批 2 的確認失敗 → 中斷行兩件事都帶", async () => {
+    class FirstIndexBroken extends MemoryStorage {
+      n = 0;
+      override async videoIdIndex(): Promise<Awaited<ReturnType<MemoryStorage["videoIdIndex"]>>> {
+        this.n += 1;
+        if (this.n === 1) {
+          throw Object.assign(new Error("Unable to parse range (synthetic non-transient 400)"), { code: 400 });
+        }
+        return super.videoIdIndex();
+      }
+    }
+    const h = harness(new FirstIndexBroken(), [[textUpdate(1, link(1))], [textUpdate(2, link(2))], conflict409()]);
+    await expect(drainWithTally(h.fake as never, h.persist, "暫存區")).rejects.toThrow("409");
+    const lines = summaryLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("drain 中斷");
+    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain("1 筆失敗未寫入、已被確認收走、不會重領");
+    expect(lines[0]).toContain("需重新操作(連結請重貼、夯度請重按)");
+  });
+
   it("沒跑:第一次 getUpdates 就失敗 → 已處理 0 筆,且不含「尚未被 Telegram 確認」", async () => {
     const h = harness(new MemoryStorage(), [conflict409()]);
     await expect(drainWithTally(h.fake as never, h.persist, "暫存區")).rejects.toThrow("409");

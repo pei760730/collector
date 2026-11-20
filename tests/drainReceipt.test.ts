@@ -223,3 +223,56 @@ describe("寫入失敗中止:摘要也帶分項與未確認筆數", () => {
     expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
   });
 });
+
+/** 多批:批 1 有一則碰到非暫態錯誤(被確認收走、沒寫入),之後才出事 —— 兩件事都要看得到。 */
+const LOST_NOTE = "1 筆失敗未寫入、已被確認收走、不會重領";
+const REDO_HINT = "需重新操作(連結請重貼、夯度請重按)";
+
+describe("多批:先前批次有「已確認收走但沒寫入」,後面又中斷/中止 → 摘要兩件事都帶", () => {
+  it("(voc)批 2 的確認 getUpdates 失敗 → 中斷行同時有「1 筆尚未確認」與「1 筆失敗未寫入、已被確認收走」", async () => {
+    const storage = new IndexBrokenOnCall(new Set([1])); // 批 1 的 link(1) 非暫態失敗
+    script = [[textUpdate(1, link(1))], [textUpdate(2, link(2))], conflict409()];
+    await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
+
+    expect(getUpdatesOffsets).toEqual([0, 2, 3]);
+    expect(await storage.readAll()).toHaveLength(1);
+    const lines = summaryLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("drain 中斷");
+    expect(lines[0]).toContain("已處理 2 筆");
+    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain(LOST_NOTE);
+    expect(lines[0]).toContain(REDO_HINT);
+  });
+
+  it("(voc)批 2 某筆 append 暫時失敗而中止 → 中止行同時有「1 筆尚未確認」與「1 筆失敗未寫入、已被確認收走」,exit 2", async () => {
+    class BrokenIndexThenAppendFails extends IndexBrokenOnCall {
+      appends = 0;
+      override async append(row: RefRow): Promise<void> {
+        this.appends += 1;
+        if (this.appends === 2) throw new Error("quota exceeded (synthetic)");
+        return super.append(row);
+      }
+    }
+    const storage = new BrokenIndexThenAppendFails(new Set([1]));
+    script = [[textUpdate(1, link(1))], [textUpdate(2, link(2)), textUpdate(3, link(3))]];
+    const code = await runDrain(memoryConfig(), storage, VOC_TARGET);
+
+    expect(code).toBe(2);
+    expect(getUpdatesOffsets).toEqual([0, 2]);
+    const lines = summaryLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("drain 中止");
+    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain(LOST_NOTE);
+    expect(lines[0]).toContain(REDO_HINT);
+  });
+
+  it("單批 B 的說法對連結/夯度兩種來源都成立(不再只說「需重貼」)", async () => {
+    const storage = new IndexBrokenOnCall(new Set([1]));
+    script = [[textUpdate(1, link(1))]];
+    expect(await runDrain(memoryConfig(), storage, VOC_TARGET)).toBe(3);
+    expect(summaryLines()[0]).toContain(REDO_HINT);
+    expect(summaryLines()[0]).not.toContain("需重貼");
+  });
+});

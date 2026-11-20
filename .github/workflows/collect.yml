@@ -140,7 +140,7 @@ jobs:
       # 巡檢不用點進 log。行首依 src/shared/drainLoop.ts formatDrainSummary 的開頭分四種
       # (完成 / 有訊息失敗未寫入 / 中止 / 中斷),這裡再加一行白話標籤,讓 owner 不用讀完整行:
       #   完成=正常;有訊息失敗未寫入=被確認收走但沒進表(不會重領,要重貼);
-      #   中止=寫入失敗、未確認段下輪重領;中斷+一筆都沒領到=沒跑;中斷+其餘=已寫入但沒回條。
+      #   中止=寫入失敗、未確認段下輪重領;中斷+一筆都沒領到=沒跑;中斷+其餘=有更新已處理但沒回條;摘要含「已被確認收走」時另補一句需重新操作(多批可同時成立)。
       # grep 無命中(target 跳過/守門擋下/drain 沒跑到收尾)不可紅 → 接 || 給 fallback 行,step 永遠綠。
       - name: Step summary (${{ matrix.target }})
         if: always()
@@ -149,11 +149,16 @@ jobs:
           case "$LINE" in
             "") LABEL="⚪ 沒有「已處理」行:target 跳過、secrets 守門擋下,或 drain 未跑到收尾" ;;
             *"drain 完成:"*) LABEL="✅ 正常收尾" ;;
-            *"drain 有訊息失敗未寫入"*) LABEL="🔴 有訊息被確認收走但沒寫進表(不會重領,需重貼)" ;;
+            *"drain 有訊息失敗未寫入"*) LABEL="🔴 有訊息被確認收走但沒寫進表(不會重領,需重新操作:連結重貼、夯度重按)" ;;
             *"drain 中止"*) LABEL="🔴 寫入失敗中止(未確認段下輪重領)" ;;
             *"drain 中斷"*"一筆都沒領到"*) LABEL="🔴 沒跑:一筆都沒領到" ;;
-            *"drain 中斷"*) LABEL="🔴 已寫入但沒回條(尚未確認,下輪重領,去重會擋)" ;;
+            *"drain 中斷"*) LABEL="🔴 有更新已處理但沒回條(尚未確認,下輪重領,去重會擋)" ;;
             *) LABEL="⚪ 無法判讀的收尾行" ;;
+          esac
+          # 多批時「未確認段會重領」與「先前批次已被收走、沒寫進表」可同時成立,兩件事都要看得到。
+          case "$LINE" in
+            *"drain 中止"*"已被確認收走"*|*"drain 中斷"*"已被確認收走"*)
+              LABEL="$LABEL;另有已被確認收走、沒寫進表的訊息,需重新操作(連結重貼、夯度重按)" ;;
           esac
           {
             echo "### drain ${{ matrix.target }}"
@@ -209,7 +214,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Error annotation (API-blip resilient)
-        run: echo "::error::collector drain 收場為 ${{ needs.drain.result }} —— 這輪抓片佇列沒排空,需要重跑。"
+        run: echo "::error::collector drain 收場為 ${{ needs.drain.result }} —— ${{ needs.drain.result == 'cancelled' && '這輪抓片佇列沒排空,需要重跑。' || '若 run 頁收尾行寫「已被確認收走」,佇列已排空、不用重跑,請照行內說明重新操作;否則這輪沒做完,需要重跑。' }}"
 
       - name: Report to Kai (kai-notify, fail-soft)
         uses: pei760730/kai-notify@v1
@@ -217,4 +222,4 @@ jobs:
           KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
           KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
         with:
-          text: "${{ needs.drain.result == 'cancelled' && '🟠 collector drain 被中止(逾時或人為按停)' || '🔴 collector drain 失敗(job 層警報:若沒收到帶錯誤細節的那則,代表 job 在第一個步驟開始前就死了)' }} —— 這輪抓片佇列沒排空,需要重跑 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          text: "${{ needs.drain.result == 'cancelled' && '🟠 collector drain 被中止(逾時或人為按停) —— 這輪抓片佇列沒排空,需要重跑' || '🔴 collector drain 失敗(job 層警報:若沒收到帶錯誤細節的那則,代表 job 在第一個步驟開始前就死了,這輪沒做完、需要重跑;若 run 頁收尾行寫「已被確認收走」,佇列已排空、不用重跑,請照行內說明重新操作)' }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

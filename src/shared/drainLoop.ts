@@ -161,7 +161,8 @@ function otherCount(t: DrainTally): number {
 
 /**
  * 收尾摘要(collect.yml Step Summary 靠 grep '已處理' 抓這一行,所以一律含「已處理 N 筆」)。
- * result = null 代表迴圈中途 reject(領取/確認更新失敗)。四種開頭各自不同:
+ * result = null 代表迴圈中途 reject(領取/確認更新失敗)。四種開頭各自不同;
+ * 「寫入」只計確認寫入成功的(append 已落表才丟錯的那筆以表為準,摘要不計):
  *   drain 完成 / drain 有訊息失敗未寫入 / drain 中止 / drain 中斷
  */
 export function formatDrainSummary(result: DrainResult | null, t: DrainTally): string {
@@ -169,16 +170,22 @@ export function formatDrainSummary(result: DrainResult | null, t: DrainTally): s
   const unacked = t.processed - t.acked;
   const unackedNote =
     unacked > 0 ? `;其中 ${unacked} 筆尚未被 Telegram 確認(下輪會重領,去重會擋,不會加倍)` : "";
+  // 先前批次已被確認收走、沒寫進表的筆數:跟「未確認段會重領」是兩件事,兩者可同時成立,
+  // 所以中斷/中止/收尾三種摘要都要各自帶出(連結要重貼、夯度要重按,不是同一種補救)。
+  const lostNote =
+    t.ackedUnwritten > 0
+      ? `;其中 ${t.ackedUnwritten} 筆失敗未寫入、已被確認收走、不會重領,需重新操作(連結請重貼、夯度請重按)`
+      : "";
   if (result === null) {
     return t.processed === 0
       ? "drain 中斷(領取更新失敗):已處理 0 筆更新,一筆都沒領到"
-      : `drain 中斷(領取/確認更新失敗):已處理 ${t.processed} 筆更新(${counts})${unackedNote}`;
+      : `drain 中斷(領取/確認更新失敗):已處理 ${t.processed} 筆更新(${counts})${unackedNote}${lostNote}`;
   }
   if (result.aborted) {
-    return `drain 中止(寫入失敗,部分未處理):已處理 ${t.processed} 筆更新(${counts})${unackedNote}`;
+    return `drain 中止(寫入失敗,部分未處理):已處理 ${t.processed} 筆更新(${counts})${unackedNote}${lostNote}`;
   }
   if (t.ackedUnwritten > 0) {
-    return `drain 有訊息失敗未寫入:已處理 ${t.processed} 筆更新(${counts});其中 ${t.ackedUnwritten} 筆失敗未寫入、已被確認收走、不會重領,需重貼`;
+    return `drain 有訊息失敗未寫入:已處理 ${t.processed} 筆更新(${counts})${lostNote}`;
   }
   return `drain 完成:已處理 ${t.processed} 筆更新(${counts})`;
 }
