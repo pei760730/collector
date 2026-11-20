@@ -137,14 +137,28 @@ jobs:
           ERROR_CHAT_ID: ${{ secrets[matrix.error_secret] }}
 
       # 收錄摘要:把 drain 收尾的「已處理 N 筆」行掛上 run 首頁(Step Summary),
-      # 巡檢不用點進 log。grep 無命中(target 跳過/守門擋下/drain 沒跑到收尾)不可紅
-      # → 接 || 給 fallback 行,step 永遠綠。
+      # 巡檢不用點進 log。行首依 src/shared/drainLoop.ts formatDrainSummary 的開頭分四種
+      # (完成 / 有訊息失敗未寫入 / 中止 / 中斷),這裡再加一行白話標籤,讓 owner 不用讀完整行:
+      #   完成=正常;有訊息失敗未寫入=被確認收走但沒進表(不會重領,要重貼);
+      #   中止=寫入失敗、未確認段下輪重領;中斷+一筆都沒領到=沒跑;中斷+其餘=已寫入但沒回條。
+      # grep 無命中(target 跳過/守門擋下/drain 沒跑到收尾)不可紅 → 接 || 給 fallback 行,step 永遠綠。
       - name: Step summary (${{ matrix.target }})
         if: always()
         run: |
+          LINE=$(grep '已處理' drain.log 2>/dev/null | tail -n 1 || true)
+          case "$LINE" in
+            "") LABEL="⚪ 沒有「已處理」行:target 跳過、secrets 守門擋下,或 drain 未跑到收尾" ;;
+            *"drain 完成:"*) LABEL="✅ 正常收尾" ;;
+            *"drain 有訊息失敗未寫入"*) LABEL="🔴 有訊息被確認收走但沒寫進表(不會重領,需重貼)" ;;
+            *"drain 中止"*) LABEL="🔴 寫入失敗中止(未確認段下輪重領)" ;;
+            *"drain 中斷"*"一筆都沒領到"*) LABEL="🔴 沒跑:一筆都沒領到" ;;
+            *"drain 中斷"*) LABEL="🔴 已寫入但沒回條(尚未確認,下輪重領,去重會擋)" ;;
+            *) LABEL="⚪ 無法判讀的收尾行" ;;
+          esac
           {
             echo "### drain ${{ matrix.target }}"
-            grep '已處理' drain.log 2>/dev/null || echo "(無「已處理」行:target 跳過、secrets 守門擋下,或 drain 未跑到收尾)"
+            echo "$LABEL"
+            if [ -n "$LINE" ]; then echo "$LINE"; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       # 失敗才報:drain job 崩潰時抓 log 尾巴真因,收攏推到統一通知 bot(@MYNOOTIFYBot),走 kai-notify(fail-soft)。

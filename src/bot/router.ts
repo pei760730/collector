@@ -21,6 +21,7 @@ import {
   installEditedMessageHint,
   DRAIN_SAFE_TELEGRAF_OPTIONS,
 } from "../shared/telegramSafety.js";
+import type { UpdateOutcome } from "../shared/drainLoop.js";
 
 // ── 夯度 inline 按鈕(tbvoc;自 clip-collector 移植,值域改由 target.hotValues 注入)─────
 // 收錄成功後在回覆下掛一排「夯爆了/NPC/拉完了」,分享者一鍵下標。
@@ -43,6 +44,8 @@ export function hotKeyboard(key: string, values: readonly string[], chosen = -1)
 export interface BotHooks {
   /** 某筆寫入參考池失敗時呼叫(drain 用來停在當前 offset、不 ack)。 */
   onPersistError?: () => void;
+  /** 本筆去向(drain 收尾回條用):saved / duplicate / unwritten(非暫態錯誤、沒寫進表但照舊 ack)。 */
+  onOutcome?: (outcome: UpdateOutcome) => void;
 }
 
 export function createBot(
@@ -96,6 +99,7 @@ export function createBot(
           storage,
           expandShortUrls: config.expandShortUrls,
           onPersistError: hooks?.onPersistError,
+          onOutcome: hooks?.onOutcome,
           target,
         },
       );
@@ -115,6 +119,7 @@ export function createBot(
       // 訊息就從佇列永久消失。比照夯度 callback(下方)翻 persist 旗標讓 drain 停在此
       // offset、下次 cron 重領重試;非暫態重領也沒用,維持通知後照常 ack。
       if (isTransient(err)) hooks?.onPersistError?.();
+      else hooks?.onOutcome?.("unwritten"); // 照常 ack、沒寫進表:回條要列出來
       await ctx.reply("❌ 處理時發生未預期錯誤。").catch(() => {});
       await notifyError(`collect 例外:${errText(err)}`);
     }
@@ -160,6 +165,7 @@ export function createBot(
         // 一次暫態故障被 ack 掉永久丟失(舊版只 notifyError,update 照 ack)。
         // 非暫態(權限/表結構等真錯)重領也沒用,維持原行為:通知後照常 ack。
         if (isTransient(err)) hooks?.onPersistError?.();
+        else hooks?.onOutcome?.("unwritten"); // 夯度沒標上卻照常 ack:回條要列出來
         await ctx.answerCbQuery("標記失敗").catch(() => {});
         await notifyError(`夯度 callback 失敗:${errText(err)}`);
       }

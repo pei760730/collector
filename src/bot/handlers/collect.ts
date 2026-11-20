@@ -12,6 +12,7 @@ import { expandShortUrl as coreExpandShortUrl } from "../../utils/expandUrl.js";
 import { logger } from "../../utils/logger.js";
 import { errSummary } from "../../shared/errorSummary.js";
 import { AppendVerificationError } from "../../shared/appendIdempotency.js";
+import type { UpdateOutcome } from "../../shared/drainLoop.js";
 
 // 同進程序列化 dedup→append,避免同一連結極短時間連發時兩條都過去重再雙寫。
 // (跨進程要靠單一 bot 實例;我們就是單實例 polling。)
@@ -40,6 +41,8 @@ export interface CollectDeps {
    * 得知「這筆沒持久化」,好停在當前 offset、不 ack、下次 cron 重領,避免靜默丟資料。
    */
   onPersistError?: () => void;
+  /** 本筆去向(saved/duplicate)—— drain 收尾回條用;沒傳 = 常駐版/測試,行為不變。 */
+  onOutcome?: (outcome: UpdateOutcome) => void;
 }
 
 export interface CollectResult {
@@ -92,6 +95,7 @@ export async function runCollect(
       const index = await deps.storage.dedupIndex();
       const hit = index.get(draft.dedupKey);
       if (hit) {
+        deps.onOutcome?.("duplicate");
         // (tbvoc)已收過也讓他能(重)標夯度:帶同一支的 key。voc 不帶。
         return target.hotValues
           ? { reply: duplicateMsg(hit), hotKey: draft.dedupKey }
@@ -115,6 +119,7 @@ export async function runCollect(
 
     // public repo 的 Actions log 誰都看得到:只印平台、不印連結(dedupKey 對 unsupported
     // 平台 fallback=完整 URL,一樣不印)。明細在表裡;of 引擎收錄行同紀律(只印 VIDEO_ID)。
+    deps.onOutcome?.("saved");
     logger.info(`收錄 ${draft.row.平台}`);
     const reply = target.successMsg(draft.row, {
       unsupported: draft.unsupported,

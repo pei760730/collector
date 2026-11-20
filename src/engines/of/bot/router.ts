@@ -17,11 +17,14 @@ import {
   installEditedMessageHint,
   DRAIN_SAFE_TELEGRAF_OPTIONS,
 } from "../../../shared/telegramSafety.js";
+import type { UpdateOutcome } from "../../../shared/drainLoop.js";
 
 /** drain 模式注入的鉤子;常駐版不傳(undefined)。 */
 export interface BotHooks {
   /** 某筆寫入暫存區失敗時呼叫(drain 用來停在當前 offset、不 ack)。 */
   onPersistError?: () => void;
+  /** 本筆去向(drain 收尾回條用):saved / duplicate / unwritten(非暫態錯誤、沒寫進表但照舊 ack)。 */
+  onOutcome?: (outcome: UpdateOutcome) => void;
 }
 
 export function createBot(config: Config, storage: Storage, hooks?: BotHooks): Telegraf {
@@ -67,6 +70,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
           storage,
           expandShortUrls: config.expandShortUrls,
           onPersistError: hooks?.onPersistError,
+          onOutcome: hooks?.onOutcome,
         },
       );
       // reply 包 catch:使用者封鎖 bot / chat 失效時 reply 會丟例外,不能因此吞掉
@@ -78,6 +82,7 @@ export function createBot(config: Config, storage: Storage, hooks?: BotHooks): T
       // videoIdIndex() 全表讀在 inner try 之外:暫態失敗照常 ack 會讓這則訊息從佇列
       // 永久消失。比照主 router 夯度 callback 翻 persist 旗標,drain 停在此 offset 下輪重領。
       if (isTransient(err)) hooks?.onPersistError?.();
+      else hooks?.onOutcome?.("unwritten"); // 照常 ack、沒寫進暫存區:回條要列出來
       await ctx.reply("❌ 處理時發生未預期錯誤。").catch(() => {});
       await notifyError(`ingest 例外:${errText(err)}`);
     }

@@ -6,10 +6,13 @@
 import { describe, it, expect } from "vitest";
 import type { Update } from "@telegraf/types";
 import {
+  drainHooks,
   drainUpdates,
   exitCodeFor,
+  newDrainTally,
   type DrainableBot,
   type PersistFlag,
+  type UpdateOutcome,
 } from "../../src/shared/drainLoop.js";
 
 function upd(id: number): Update {
@@ -25,6 +28,8 @@ function makeFakeBot(opts: {
   failOn?: Set<number>;
   persist: PersistFlag;
   throwOn?: Set<number>;
+  /** 每筆處理時模擬 handler 經 hooks 回報的去向。 */
+  outcomes?: Map<number, UpdateOutcome[]>;
 }) {
   const offsetsSeen: number[] = [];
   const handled: number[] = [];
@@ -45,6 +50,8 @@ function makeFakeBot(opts: {
     },
     async handleUpdate(u) {
       handled.push(u.update_id);
+      const hooks = drainHooks(opts.persist);
+      for (const o of opts.outcomes?.get(u.update_id) ?? []) hooks.onOutcome(o);
       if (opts.throwOn?.has(u.update_id)) throw new Error("路由層例外");
       if (opts.failOn?.has(u.update_id)) opts.persist.failed = true;
     },
@@ -121,5 +128,110 @@ describe("exitCodeFor:aborted 不得回 0(collect.yml 紅燈是底線告警)", (
   it("正常完成 → 0", () => {
     expect(exitCodeFor({ processed: 3, aborted: false })).toBe(0);
     expect(exitCodeFor({ processed: 0, aborted: false })).toBe(0);
+  });
+});
+
+describe("drain 回條帳本(tally):每筆去向與確認進度", () => {
+  it("handler 回報的去向分項累計;沒回報 = 其他;ack 後 acked 追上 processed", async () => {
+    const persist: PersistFlag = { failed: false };
+    const { bot } = makeFakeBot({
+      updates: [upd(1), upd(2), upd(3), upd(4)],
+      persist,
+      outcomes: new Map<number, UpdateOutcome[]>([
+        [1, ["saved"]],
+        [2, ["duplicate"]],
+        [3, ["unwritten"]],
+      ]),
+    });
+    const tally = newDrainTally();
+    await drainUpdates(bot, persist, "測試目的地", tally);
+    expect(tally).toEqual({
+      processed: 4,
+      saved: 1,
+      duplicate: 1,
+      unwritten: 1,
+      acked: 4,
+      ackedUnwritten: 1,
+    });
+  });
+
+  it("先到先贏:已回報 saved 之後的 unwritten 不得改判(回覆階段的雜訊例外)", async () => {
+    const persist: PersistFlag = { failed: false };
+    const { bot } = makeFakeBot({
+      updates: [upd(1)],
+      persist,
+      outcomes: new Map<number, UpdateOutcome[]>([[1, ["saved", "unwritten"]]]),
+    });
+    const tally = newDrainTally();
+    await drainUpdates(bot, persist, "測試目的地", tally);
+    expect(tally.saved).toBe(1);
+    expect(tally.unwritten).toBe(0);
+  });
+
+  it("每筆處理前 outcome 歸零:前一筆的去向不會串到下一筆", async () => {
+    const persist: PersistFlag = { failed: false };
+    const { bot } = makeFakeBot({
+      updates: [upd(1), upd(2)],
+      persist,
+      outcomes: new Map<number, UpdateOutcome[]>([[1, ["saved"]]]),
+    });
+    const tally = newDrainTally();
+    await drainUpdates(bot, persist, "測試目的地", tally);
+    expect(tally.saved).toBe(1);
+    expect(tally.processed).toBe(2); // 第二筆沒回報 → 其他
+  });
+
+  it("handleUpdate 丟例外且沒回報去向 → 算失敗未寫入(照舊 ack)", async () => {
+    const persist: PersistFlag = { failed: false };
+    const { bot } = makeFakeBot({ updates: [upd(1)], throwOn: new Set([1]), persist });
+    const tally = newDrainTally();
+    const result = await drainUpdates(bot, persist, "測試目的地", tally);
+    expect(result).toEqual({ processed: 1, aborted: false });
+    expect(tally.unwritten).toBe(1);
+    expect(tally.ackedUnwritten).toBe(1);
+  });
+
+  it("中止:失敗批內已處理的筆數留在 processed 但沒被確認(acked 落後)", async () => {
+    const persist: PersistFlag = { failed: false };
+    // 一次回 3 筆的 bot:第 3 筆寫入失敗 → 前 2 筆已處理但整批沒 ack
+    const bot: DrainableBot = {
+      telegram: { getUpdates: async (_t, _l, offset) => (offset === 0 ? [upd(1), upd(2), upd(3)] : []) },
+      handleUpdate: async (u) => {
+        if (u.update_id === 3) persist.failed = true;
+        else drainHooks(persist).onOutcome("saved");
+      },
+    };
+    const tally = newDrainTally();
+    const result = await drainUpdates(bot, persist, "測試目的地", tally);
+    expect(result).toEqual({ processed: 2, aborted: true });
+    expect(tally.saved).toBe(2);
+    expect(tally.acked).toBe(0);
+  });
+
+  it("確認用的 getUpdates 失敗 → reject 但 tally 保留(呼叫端據此印回條)", async () => {
+    const persist: PersistFlag = { failed: false };
+    const bot: DrainableBot = {
+      telegram: {
+        getUpdates: async (_t, _l, offset) => {
+          if (offset === 0) return [upd(1), upd(2)];
+          throw Object.assign(new Error("409 synthetic"), { response: { error_code: 409 } });
+        },
+      },
+      handleUpdate: async () => drainHooks(persist).onOutcome("saved"),
+    };
+    const tally = newDrainTally();
+    await expect(drainUpdates(bot, persist, "測試目的地", tally)).rejects.toThrow("409");
+    expect(tally.processed).toBe(2);
+    expect(tally.saved).toBe(2);
+    expect(tally.acked).toBe(0);
+  });
+});
+
+describe("exitCodeFor:有訊息被確認收走卻沒寫進表 → 非 0", () => {
+  it("ackedUnwritten > 0 → 3;aborted 仍優先 → 2;不傳 tally 行為如舊", () => {
+    const t = { ...newDrainTally(), processed: 3, unwritten: 3, acked: 3, ackedUnwritten: 3 };
+    expect(exitCodeFor({ processed: 3, aborted: false }, t)).toBe(3);
+    expect(exitCodeFor({ processed: 3, aborted: true }, t)).toBe(2);
+    expect(exitCodeFor({ processed: 3, aborted: false })).toBe(0);
   });
 });

@@ -17,19 +17,21 @@
 import { createBot } from "./bot/router.js";
 import { loadConfig } from "./config.js";
 import {
-  drainUpdates,
+  drainHooks,
+  drainWithTally,
   exitCodeFor,
+  logDrainSummary,
   type DrainResult,
+  type DrainTally,
   type PersistFlag,
 } from "../../shared/drainLoop.js";
 import { callTelegramWithRetry } from "../../shared/telegramRetry.js";
 import { makeGateAlerter } from "./drainLoop.js";
 import { GoogleSheetsStorage } from "./storage/googleSheets.js";
 import { requireDrainGoogleConfig } from "../../shared/configSafety.js";
-import { logger } from "./utils/logger.js";
 import { logFatal } from "../../shared/errorSummary.js";
 
-async function main(): Promise<DrainResult> {
+async function main(): Promise<{ result: DrainResult; tally: DrainTally }> {
   const config = loadConfig();
   const google = requireDrainGoogleConfig(config);
   // DATE 一律 Asia/Taipei(utils/date.ts 寫死),不靠 process.env.TZ。
@@ -50,11 +52,7 @@ async function main(): Promise<DrainResult> {
   // persist.failed:某筆寫入暫存區失敗(可重試)的 side-channel 旗標。每筆處理前歸零,
   // handleUpdate 內若觸發 onPersistError 會翻 true → 該筆「沒持久化」,不能 ack。
   const persist: PersistFlag = { failed: false };
-  const bot = createBot(config, storage, {
-    onPersistError: () => {
-      persist.failed = true;
-    },
-  });
+  const bot = createBot(config, storage, drainHooks(persist));
   const gateAlerter = makeGateAlerter(config.errorChatId, (chatId, text) =>
     callTelegramWithRetry("sendMessage", () => bot.telegram.sendMessage(chatId, text)),
   );
@@ -66,23 +64,22 @@ async function main(): Promise<DrainResult> {
     bot.telegram.deleteWebhook({ drop_pending_updates: false }),
   ); // 清殘留 webhook,保留待領更新
 
-  const result = await drainUpdates(bot, persist, "暫存區");
+  // 中途 reject(領取/確認更新失敗)時 drainWithTally 會先印「已處理 N 筆、M 筆尚未確認」再丟出原錯誤。
+  const { result, tally } = await drainWithTally(bot, persist, "暫存區");
 
   // exit 前先等 gate 告警送完:bootstrap 是 process.exit(exitCodeFor),會砍在途 I/O;
   // 舊寫法 fire-and-forget(void sendMessage)在這裡就會被砍掉、告警靜默消失。
   await flushGateAlert();
 
-  logger.info(
-    `drain ${result.aborted ? "中止(寫入失敗,部分未處理)" : "完成"}:已處理 ${result.processed} 筆更新`,
-  );
-  return result;
+  logDrainSummary(result, tally);
+  return { result, tally };
 }
 
 main()
   // 顯式退出 + exit code 對映:aborted → exit 2(非 0)。舊版一律 exit 0 會讓 collect.yml
   // 假綠、kai-notify(if: failure())永不觸發 —— Sheets 壞掉 + ERROR_CHAT_ID 沒設時
   // 就是靜默丟資料。main resolve 前已 await flushGateAlert,這裡 exit 不會截斷告警。
-  .then((result) => process.exit(exitCodeFor(result)))
+  .then(({ result, tally }) => process.exit(exitCodeFor(result, tally)))
   .catch((err) => {
     logFatal("drain 失敗", err);
     process.exit(1);

@@ -15,6 +15,14 @@ Telegram 收集 bot(原 short-video-bot,2026-07-15 三併一改名)。一套殼�
 
 GitHub Actions cron drain(`.github/workflows/collect.yml`):matrix 併行跑四個 target,把 Telegram 囤積的更新撈乾、寫入後結束,無常駐機。secrets 採 per-target 前綴(voc 無前綴、`TBVOC_`、`OF_`、`OFGAY_`),缺任一支紅燈、五支全空視為未接線跳過(目前四個 target **全部已接線並在收**;2026-09-12 實測每個 job 都印出 `drain 完成:已處理 N 筆更新`)。`.github/workflows/heartbeat.yml` 每 6h 看守:collect 太久沒跑就自動補觸發,快逼近 Telegram 24h 保留期才通知。
 
+**怎麼讀每個 target 的 run 結果**(run 首頁 Step Summary 會先給一行白話標籤,再附 log 的收尾行「已處理 N 筆更新(寫入、重複、失敗未寫入、其他)」):
+
+- ✅ 正常收尾:每一筆都有去處。
+- 🔴 有訊息被確認收走但沒寫進表:run 會是紅的。這幾筆 Telegram 不會再給,要請分享者重貼。
+- 🔴 寫入失敗中止:表沒寫成功,沒確認的那段下一輪會自動重領。
+- 🔴 已寫入但沒回條:表上其實已經寫進去了,只是 Telegram 還沒收到確認;下一輪會重領,去重會擋,不會變兩列。
+- 🔴 沒跑:一筆都沒領到。
+
 ## 開發
 
 ```
