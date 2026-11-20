@@ -7,8 +7,11 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { formatDrainSummary, newDrainTally, type DrainTally } from "../../src/shared/drainLoop.js";
+
+// 每個 case 都 spawn Git Bash(Windows 上單次就可能數百 ms~1s,高負載更久),預設 5s 不夠。
+vi.setConfig({ testTimeout: 60_000 });
 
 const bash = process.platform === "win32" ? "C:/Program Files/Git/usr/bin/bash.exe" : "bash";
 const workflowPath = new URL("../../.github/workflows/collect.yml", import.meta.url);
@@ -32,6 +35,7 @@ function runStep(logContent: string | null) {
     encoding: "utf8",
     cwd: dir,
     env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile },
+    timeout: 50_000, // 卡住就明確失敗(status=null),不是靜默等到測試逾時
   });
   return { status: result.status, summary: readFileSync(summaryFile, "utf8") };
 }
@@ -54,15 +58,40 @@ describe("collect.yml Step Summary:多批時「會重領」與「已被收走需
   });
 });
 
-describe("collect.yml job 層失敗通知:不再無條件說「佇列沒排空、需要重跑」", () => {
-  it("failure 分支的文字提示:收尾行寫「已被確認收走」= 佇列已排空、重跑領不回", () => {
-    const workflow = readFileSync(workflowPath, "utf8");
-    const block = workflow.slice(workflow.indexOf("  notify-broken:"));
-    const failureText = block.match(/\|\| '(🔴 collector drain 失敗[^']*)'/)?.[1] ?? "";
-    expect(failureText).toContain("已被確認收走");
-    expect(failureText).toContain("不用重跑");
-    // 公共尾巴不得再把「需要重跑」套在 failure 上(cancelled 分支才保留)
+describe("collect.yml job 層失敗通知:每種收尾下文字各自為真", () => {
+  const workflow = readFileSync(workflowPath, "utf8");
+  const block = workflow.slice(workflow.indexOf("  notify-broken:"));
+  // failure 分支的兩段文字(annotation 與 kai-notify 內文)都含「不用重跑」那一句。
+  const failureTexts = [...block.matchAll(/\|\| '([^']*不用重跑[^']*)'/g)].map((m) => m[1]!);
+
+  it("找得到 annotation 與 kai-notify 兩段 failure 文字", () => {
+    expect(failureTexts).toHaveLength(2);
+  });
+
+  it.each([0, 1])("文字 #%i:只有「純 B(drain 有訊息失敗未寫入)」才說佇列已排空/不用重跑", (i) => {
+    const clauses = failureTexts[i]!.split(/[;;]/);
+    const noRerun = clauses.filter((c) => c.includes("不用重跑"));
+    expect(noRerun).toHaveLength(1);
+    expect(noRerun[0]).toContain("drain 有訊息失敗未寫入");
+    expect(noRerun[0]).not.toContain("drain 中斷");
+    expect(noRerun[0]).not.toContain("drain 中止");
+  });
+
+  it.each([0, 1])("文字 #%i:中斷/中止帶「已被確認收走」時講成兩件事(下輪自動重領 + 需重新操作)", (i) => {
+    const clause = failureTexts[i]!.split(/[;;]/).find((c) => c.includes("drain 中斷"));
+    expect(clause).toBeDefined();
+    expect(clause).toContain("drain 中止");
+    expect(clause).toContain("已被確認收走");
+    expect(clause).toContain("下輪會自動重領");
+    expect(clause).toContain("重新操作");
+    expect(clause).not.toContain("不用重跑");
+    expect(clause).not.toContain("佇列已排空");
+  });
+
+  it("cancelled 分支仍說沒排空、需要重跑;公共尾巴不再無條件套「需要重跑」", () => {
+    expect(block).toContain("被中止(逾時或人為按停) —— 這輪抓片佇列沒排空,需要重跑");
     expect(block).not.toMatch(/\}\} —— 這輪抓片佇列沒排空,需要重跑 —/);
+    expect(block).not.toMatch(/\}\} — .*沒做完的話需要重跑/);
   });
 });
 

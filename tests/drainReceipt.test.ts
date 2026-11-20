@@ -276,3 +276,53 @@ describe("多批:先前批次有「已確認收走但沒寫入」,後面又中�
     expect(summaryLines()[0]).not.toContain("需重貼");
   });
 });
+
+describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數)、M(未確認)另算", () => {
+  it("(R5 中斷)批 1 未寫入 1 筆;批 2 未寫入 1 + 寫入 1,之後確認失敗 → N=2、K=1、M=2", async () => {
+    const storage = new IndexBrokenOnCall(new Set([1, 2])); // u1、u2 的 dedupIndex 非暫態失敗
+    script = [[textUpdate(1, link(1))], [textUpdate(2, link(2)), textUpdate(3, link(3))], conflict409()];
+    await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
+
+    expect(getUpdatesOffsets).toEqual([0, 2, 4]);
+    const line = summaryLines()[0]!;
+    expect(line).toContain("已處理 3 筆");
+    expect(line).toContain("失敗未寫入 2"); // N
+    expect(line).toContain("其中 2 筆尚未被 Telegram 確認"); // M(批 2 全部)
+    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走"); // K(只有批 1 那筆)
+    expect(line).not.toContain("其中 2 筆失敗未寫入");
+  });
+
+  it("(R5 中止)批 1 未寫入 1 筆;批 2 先未寫入 1 筆、再有一筆 append 暫時失敗 → N=2、K=1、M=1,exit 2", async () => {
+    class FirstAppendFails extends IndexBrokenOnCall {
+      override async append(row: RefRow): Promise<void> {
+        throw new Error(`quota exceeded (synthetic) ${row.平台}`);
+      }
+    }
+    const storage = new FirstAppendFails(new Set([1, 2]));
+    script = [[textUpdate(1, link(1))], [textUpdate(2, link(2)), textUpdate(3, link(3))]];
+    const code = await runDrain(memoryConfig(), storage, VOC_TARGET);
+
+    expect(code).toBe(2);
+    const line = summaryLines()[0]!;
+    expect(line).toContain("drain 中止");
+    expect(line).toContain("已處理 2 筆");
+    expect(line).toContain("失敗未寫入 2"); // N
+    expect(line).toContain("其中 1 筆尚未被 Telegram 確認"); // M(批 2 的 u2)
+    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走"); // K(批 1 的 u1)
+    expect(line).not.toContain("其中 2 筆失敗未寫入");
+  });
+
+  it("(R10 同一批)最後一批裡的未寫入還沒被確認 → 屬於「下輪重領」,不得寫成「已被確認收走」", async () => {
+    const storage = new IndexBrokenOnCall(new Set([2])); // u2(批 2 內)非暫態失敗
+    script = [[textUpdate(1, link(1))], [textUpdate(2, link(2)), textUpdate(3, link(3))], conflict409()];
+    await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
+
+    expect(getUpdatesOffsets).toEqual([0, 2, 4]);
+    const line = summaryLines()[0]!;
+    expect(line).toContain("已處理 3 筆");
+    expect(line).toContain("失敗未寫入 1");
+    expect(line).toContain("其中 2 筆尚未被 Telegram 確認");
+    expect(line).not.toContain("已被確認收走");
+    expect(line).not.toContain("需重新操作");
+  });
+});
