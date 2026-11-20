@@ -184,14 +184,14 @@ export function formatDrainSummary(result: DrainResult | null, t: DrainTally): s
     unacked > 0
       ? `;其中 ${unacked} 筆的確認結果不明(Telegram 沒回應成功):若未確認,下輪會重領,去重通常會擋;若其實已確認,就不會再領` +
         (uncertainUnwritten > 0
-          ? `;這 ${unacked} 筆裡有 ${uncertainUnwritten} 筆未寫入:若其實已被確認收走就不會重領,請核對表上有沒有,沒有就重新操作(連結請重貼、夯度請重按)`
+          ? `;這 ${unacked} 筆裡有 ${uncertainUnwritten} 筆未寫入:若其實已被確認收走就不會重領,請核對表上有沒有,沒有就重新操作(請重貼連結)`
           : "")
       : "";
   // 先前批次已被確認收走、沒寫進表的筆數:跟「未確認段」是兩件事,兩者可同時成立,
-  // 所以中斷/中止/收尾三種摘要都要各自帶出(連結要重貼、夯度要重按,不是同一種補救)。
+  // 所以中斷/中止/收尾三種摘要都要各自帶出。
   const lostNote =
     t.ackedUnwritten > 0
-      ? `;其中 ${t.ackedUnwritten} 筆失敗未寫入、已被確認收走、不會重領,需重新操作(連結請重貼、夯度請重按)`
+      ? `;其中 ${t.ackedUnwritten} 筆失敗未寫入、已被確認收走、不會重領,需重新操作(請重貼連結)`
       : "";
   if (result === null) {
     return t.processed === 0

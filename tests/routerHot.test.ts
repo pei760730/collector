@@ -199,7 +199,8 @@ describe("router 夯度 callback(tbvoc)", () => {
     await bot.handleUpdate(callbackUpdate(hotCbData(0, dedupKey(link))));
 
     expect(persistFailed).toBe(false);
-    expect(outcomes).toEqual(["unwritten"]); // 照常 ack、夯度沒標上 → 回條要列出來
+    // 夯度寫入結果不在回條分項內(setHot 可能其實已落表只是回應遺失,不能斷言「沒寫入」):不回報去向
+    expect(outcomes).toEqual([]);
     expect(cbAnswers.some((t) => t === "標記失敗")).toBe(true);
   });
 

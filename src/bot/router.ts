@@ -44,7 +44,11 @@ export function hotKeyboard(key: string, values: readonly string[], chosen = -1)
 export interface BotHooks {
   /** 某筆寫入參考池失敗時呼叫(drain 用來停在當前 offset、不 ack)。 */
   onPersistError?: () => void;
-  /** 本筆去向(drain 收尾回條用):saved / duplicate / unwritten(非暫態錯誤、沒寫進表但照舊 ack)。 */
+  /**
+   * 本筆去向(drain 收尾回條用):saved / duplicate / unwritten(非暫態錯誤、沒寫進表但照舊 ack)。
+   * 只有收集路徑會回報;夯度 callback 的 setHot 可能「其實已落表、只是回應遺失」,
+   * 不能斷言沒寫入,所以不回報(回條裡算「其他」,以表為準)。
+   */
   onOutcome?: (outcome: UpdateOutcome) => void;
 }
 
@@ -165,7 +169,6 @@ export function createBot(
         // 一次暫態故障被 ack 掉永久丟失(舊版只 notifyError,update 照 ack)。
         // 非暫態(權限/表結構等真錯)重領也沒用,維持原行為:通知後照常 ack。
         if (isTransient(err)) hooks?.onPersistError?.();
-        else hooks?.onOutcome?.("unwritten"); // 夯度沒標上卻照常 ack:回條要列出來
         await ctx.answerCbQuery("標記失敗").catch(() => {});
         await notifyError(`夯度 callback 失敗:${errText(err)}`);
       }

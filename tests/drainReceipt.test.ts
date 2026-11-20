@@ -33,6 +33,10 @@ function memoryConfig(overrides: Partial<Config> = {}): Config {
 
 // 腳本:getUpdates 每呼叫一次 shift 一個元素;Error = 丟出,陣列 = 回該批,耗盡 = 空批。
 let script: Array<Update[] | Error> = [];
+// 有狀態的 Telegram 伺服器 fake(不為 null 時優先於 script):自己持有待領更新與「已確認 offset」。
+// loseAckResponse=true:收到 offset>0 的 getUpdates 時先「接受」(丟掉 < offset 的更新、記下已確認),
+// 再丟傳輸錯誤(回應遺失)—— 模擬確認其實已生效、呼叫端卻不知道。
+let server: null | { pending: Update[]; confirmedOffset: number; loseAckResponse: boolean } = null;
 const getUpdatesOffsets: number[] = [];
 const origCallApi = Telegram.prototype.callApi;
 Telegram.prototype.callApi = async function (method: string, payload?: { offset?: number }) {
@@ -40,6 +44,17 @@ Telegram.prototype.callApi = async function (method: string, payload?: { offset?
   if (method === "deleteWebhook") return true as never;
   if (method === "getUpdates") {
     getUpdatesOffsets.push(payload?.offset ?? 0);
+    if (server) {
+      const offset = payload?.offset ?? 0;
+      if (offset > 0) {
+        server.pending = server.pending.filter((u) => u.update_id >= offset);
+        server.confirmedOffset = Math.max(server.confirmedOffset, offset);
+        if (server.loseAckResponse) {
+          throw Object.assign(new Error("fetch failed (synthetic response lost)"), { name: "FetchError" });
+        }
+      }
+      return [...server.pending] as never;
+    }
     const next = script.shift() ?? [];
     if (next instanceof Error) throw next;
     return next as never;
@@ -53,6 +68,7 @@ afterAll(() => {
 const logged: string[] = [];
 beforeEach(() => {
   script = [];
+  server = null;
   getUpdatesOffsets.length = 0;
   logged.length = 0;
   for (const level of ["info", "warn", "error"] as const) {
@@ -229,7 +245,7 @@ describe("寫入失敗中止:摘要也帶分項與未確認筆數", () => {
 
 /** 多批:批 1 有一則碰到非暫態錯誤(被確認收走、沒寫入),之後才出事 —— 兩件事都要看得到。 */
 const LOST_NOTE = "1 筆失敗未寫入、已被確認收走、不會重領";
-const REDO_HINT = "需重新操作(連結請重貼、夯度請重按)";
+const REDO_HINT = "需重新操作(請重貼連結)";
 
 describe("多批:先前批次有「已確認收走但沒寫入」,後面又中斷/中止 → 摘要兩件事都帶", () => {
   it("(voc)批 2 的確認 getUpdates 失敗 → 中斷行同時有「1 筆確認結果不明」與「1 筆失敗未寫入、已被確認收走」", async () => {
@@ -271,7 +287,7 @@ describe("多批:先前批次有「已確認收走但沒寫入」,後面又中�
     expect(lines[0]).toContain(REDO_HINT);
   });
 
-  it("單批 B 的說法對連結/夯度兩種來源都成立(不再只說「需重貼」)", async () => {
+  it("單批 B 的說法:需重新操作(請重貼連結)", async () => {
     const storage = new IndexBrokenOnCall(new Set([1]));
     script = [[textUpdate(1, link(1))]];
     expect(await runDrain(memoryConfig(), storage, VOC_TARGET)).toBe(3);
@@ -333,15 +349,13 @@ describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數
 });
 
 describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」各說各的", () => {
-  it("(a)伺服器已接受 offset 但回應遺失、重試也失敗 → 不承諾重領,且點名未寫入的那筆", async () => {
+  it("(a)伺服器已接受 offset 但回應遺失、重試也失敗 → 不承諾重領、點名未寫入那筆;下一輪真的領不到它", async () => {
     vi.useFakeTimers();
     try {
-      // u1 非暫態未寫入;確認那次 getUpdates(offset=2)的回應遺失,4 次重試全是傳輸失敗。
-      // (伺服器端其實可能已把 u1 收走:呼叫端分不出,所以摘要不得說「一定重領」。)
+      // u1 非暫態未寫入(dedupIndex 讀失敗);確認那次 getUpdates(offset=2)伺服器已接受、回應遺失,
+      // 4 次重試全是傳輸失敗。呼叫端分不出伺服器到底確認了沒 → 摘要不得說「一定重領」。
       const storage = new IndexBrokenOnCall(new Set([1]));
-      const lost = () =>
-        Object.assign(new Error("fetch failed (synthetic response lost)"), { name: "FetchError" });
-      script = [[textUpdate(1, link(1))], lost(), lost(), lost(), lost()];
+      server = { pending: [textUpdate(1, link(1))], confirmedOffset: 0, loseAckResponse: true };
       const settled = runDrain(memoryConfig(), storage, VOC_TARGET).then(
         () => ({ ok: true as const }),
         (error: unknown) => ({ error }),
@@ -350,6 +364,9 @@ describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」�
       expect("error" in (await settled)).toBe(true);
 
       expect(getUpdatesOffsets).toEqual([0, 2, 2, 2, 2]);
+      // 伺服器端事實:確認其實已生效,u1 已不在待領佇列
+      expect(server.confirmedOffset).toBe(2);
+      expect(server.pending).toEqual([]);
       const lines = summaryLines();
       expect(lines).toHaveLength(1);
       expect(lines[0]).toContain("已處理 1 筆");
@@ -361,6 +378,14 @@ describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」�
       expect(lines[0]).not.toContain("尚未被 Telegram 確認");
       expect(lines[0]).not.toContain("不會加倍");
       expect(lines[0]).not.toContain("筆失敗未寫入、已被確認收走、不會重領"); // 這筆不確定,不是 K
+
+      // 下一輪 drain 用同一個伺服器:那則真的不會再被領到,表上也沒有 → 正是摘要要 Owner 去核對的情況
+      logged.length = 0;
+      server.loseAckResponse = false;
+      const code = await runDrain(memoryConfig(), storage, VOC_TARGET);
+      expect(code).toBe(0);
+      expect(summaryLines()[0]).toContain("drain 完成:已處理 0 筆更新");
+      expect(await storage.readAll()).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }
@@ -381,5 +406,42 @@ describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」�
     expect(lines[0]).toContain("1 筆因中止沒送出確認,尚未確認,下輪會重領");
     expect(lines[0]).not.toContain("確認結果不明");
     expect(lines[0]).not.toContain("不會加倍");
+  });
+});
+
+describe("夯度按鈕(tbvoc)的寫入結果不在回條分項內", () => {
+  const hotUpdate = (updateId: number, key: string): Update =>
+    ({
+      update_id: updateId,
+      callback_query: {
+        id: `cb${updateId}`,
+        from: { id: 9, is_bot: false, first_name: "Synthetic" },
+        chat_instance: "ci",
+        data: `h:0:${key}`,
+        message: {
+          message_id: 10,
+          date: 0,
+          chat: { id: 123, type: "private", first_name: "Synthetic" },
+          from: { id: 1, is_bot: true, first_name: "bot" },
+          text: "已收進參考池",
+        },
+      },
+    }) as unknown as Update;
+
+  it("非暫態失敗:exit 不變 3、「失敗未寫入」不增加(算「其他」),摘要仍是「drain 完成」", async () => {
+    class HotBroken extends MemoryStorage {
+      override async setHot(): Promise<boolean> {
+        throw new Error("表結構壞了(synthetic 非暫態)");
+      }
+    }
+    script = [[hotUpdate(1, "tiktok:7000000000000000001")]];
+    const code = await runDrain(memoryConfig({ target: "tbvoc" }), new HotBroken(), TBVOC_TARGET);
+    expect(code).toBe(0);
+    const lines = summaryLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("drain 完成:已處理 1 筆");
+    expect(lines[0]).toContain("失敗未寫入 0");
+    expect(lines[0]).toContain("其他 1");
+    expect(lines[0]).not.toContain("已被確認收走");
   });
 });

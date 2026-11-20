@@ -52,7 +52,7 @@ describe("collect.yml Step Summary:多批時「未確認段」與「已被收走
     expect(label).toContain("確認結果不明");
     expect(label).not.toContain("下輪重領,去重");
     expect(label).toContain("另有已被確認收走");
-    expect(label).toContain("連結重貼、夯度重按");
+    expect(label).toContain("請重貼連結");
   });
   it("中止:標籤講因中止沒送出確認、下輪重領 + 已被確認收走需重新操作", () => {
     const { status, summary } = runStep(
@@ -63,7 +63,7 @@ describe("collect.yml Step Summary:多批時「未確認段」與「已被收走
     expect(label).toContain("因中止沒送出確認");
     expect(label).toContain("下輪重領");
     expect(label).toContain("另有已被確認收走");
-    expect(label).toContain("連結重貼、夯度重按");
+    expect(label).toContain("請重貼連結");
   });
   it("中斷但沒有 K、只有 U(確認結果不明段裡有未寫入):標籤提醒核對表,且不誤報成 K", () => {
     const { summary } = runStep(

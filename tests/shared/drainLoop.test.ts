@@ -255,3 +255,37 @@ describe("formatDrainSummary:不得無條件承諾「不會加倍」/「去重�
     if (line.includes("下輪會重領")) expect(line).toContain("去重通常會擋");
   });
 });
+
+describe("formatDrainSummary:U(確認結果不明段裡的未寫入)與 K(已被確認收走的未寫入)分開計", () => {
+  it("K=1 且 U=2:各自的確切數值,不互相取代", () => {
+    // 批 1(已確認)1 筆未寫入 → K=1;批 2(確認結果不明)3 筆,其中 2 筆未寫入 → M=3、U=2
+    const line = formatDrainSummary(null, {
+      ...newDrainTally(),
+      processed: 4,
+      unwritten: 3,
+      acked: 1,
+      ackedUnwritten: 1,
+    });
+    expect(line).toContain("失敗未寫入 3"); // N
+    expect(line).toContain("其中 3 筆的確認結果不明"); // M
+    expect(line).toContain("這 3 筆裡有 2 筆未寫入"); // U
+    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走、不會重領"); // K
+    expect(line).not.toContain("有 3 筆未寫入");
+    expect(line).not.toContain("有 1 筆未寫入");
+  });
+
+  it("U=0(未寫入的都已被確認收走):不出現 U 那句,只有 K", () => {
+    const line = formatDrainSummary(null, {
+      ...newDrainTally(),
+      processed: 2,
+      saved: 1,
+      unwritten: 1,
+      acked: 1,
+      ackedUnwritten: 1,
+    });
+    expect(line).toContain("其中 1 筆的確認結果不明");
+    expect(line).not.toContain("筆未寫入:");
+    expect(line).not.toContain("請核對表上有沒有");
+    expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走、不會重領");
+  });
+});

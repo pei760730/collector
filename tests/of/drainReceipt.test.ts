@@ -161,7 +161,7 @@ describe("of 引擎:共用迴圈回條", () => {
     expect(lines[0]).toContain("drain 中斷");
     expect(lines[0]).toContain("1 筆的確認結果不明");
     expect(lines[0]).toContain("1 筆失敗未寫入、已被確認收走、不會重領");
-    expect(lines[0]).toContain("需重新操作(連結請重貼、夯度請重按)");
+    expect(lines[0]).toContain("需重新操作(請重貼連結)");
   });
 
   it("raw_ 同日重領(findRawReplay 命中)與已核准閘門命中,都記成「重複」而不是「其他」", async () => {
