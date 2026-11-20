@@ -1,7 +1,7 @@
 /**
  * drain 收尾「回條」:Owner 只看 Actions run 的紅綠與 Step Summary,要能分出
  *   - 完成:每一筆去哪了(寫入/重複/失敗未寫入/其他)
- *   - A 已寫入但沒回條:確認(下一次 getUpdates)失敗 → 印「N 筆已處理、M 筆尚未確認」,exit 非 0
+ *   - A 確認(下一次 getUpdates)失敗 → 印「N 筆已處理、M 筆的確認結果不明」,exit 非 0
  *   - B 沒寫入卻被確認收走:非暫態錯誤照舊 ack(政策不變),但摘要分項列出且 exit 非 0
  *   - 沒跑:第一次 getUpdates 就失敗 → 明講 0 筆已處理,跟 A 分得出來
  * 走真的 runDrain → createBot → runCollect → drainUpdates;只替換 Telegram.prototype.callApi 與 storage。
@@ -133,7 +133,7 @@ describe("完成:摘要分項列出每一筆去哪了", () => {
 });
 
 describe("A 已寫入但沒回條(確認那次 getUpdates 失敗)", () => {
-  it("(voc)印出「已處理 2 筆、其中 2 筆尚未被 Telegram 確認」,仍 reject(exit 1)", async () => {
+  it("(voc)印出「已處理 2 筆、其中 2 筆的確認結果不明」,不承諾一定重領,仍 reject(exit 1)", async () => {
     const storage = new MemoryStorage();
     script = [[textUpdate(1, link(1)), textUpdate(2, link(2))], conflict409()];
     await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
@@ -143,9 +143,12 @@ describe("A 已寫入但沒回條(確認那次 getUpdates 失敗)", () => {
     const lines = summaryLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("已處理 2 筆");
-    expect(lines[0]).toContain("2 筆尚未被 Telegram 確認");
-    expect(lines[0]).toContain("下輪會重領");
-    expect(lines[0]).toContain("去重會擋");
+    expect(lines[0]).toContain("2 筆的確認結果不明");
+    expect(lines[0]).toContain("若未確認,下輪會重領");
+    expect(lines[0]).toContain("若其實已確認,就不會再領");
+    expect(lines[0]).toContain("去重通常會擋");
+    expect(lines[0]).not.toContain("尚未被 Telegram 確認");
+    expect(lines[0]).not.toContain("不會加倍");
   });
 
   it("(tbvoc)同一路徑,行為一致", async () => {
@@ -155,7 +158,7 @@ describe("A 已寫入但沒回條(確認那次 getUpdates 失敗)", () => {
     const lines = summaryLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("已處理 1 筆");
-    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain("1 筆的確認結果不明");
   });
 
   it("先前批次已確認、只有最後一批沒回條 → M 只算最後一批", async () => {
@@ -169,7 +172,7 @@ describe("A 已寫入但沒回條(確認那次 getUpdates 失敗)", () => {
     expect(getUpdatesOffsets).toEqual([0, 3, 4]);
     const lines = summaryLines();
     expect(lines[0]).toContain("已處理 3 筆");
-    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain("1 筆的確認結果不明");
   });
 
   it("重跑不加倍:下一輪重領同批,表上列數不變、全判重複、摘要正常收尾", async () => {
@@ -189,7 +192,7 @@ describe("A 已寫入但沒回條(確認那次 getUpdates 失敗)", () => {
 });
 
 describe("沒跑:第一次 getUpdates 就失敗", () => {
-  it("明講已處理 0 筆,且不出現「尚未被 Telegram 確認」(與 A 分得出來),仍 reject", async () => {
+  it("明講已處理 0 筆,且不出現「確認結果不明」(與 A 分得出來),仍 reject", async () => {
     const storage = new MemoryStorage();
     script = [conflict409()];
     await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
@@ -197,12 +200,12 @@ describe("沒跑:第一次 getUpdates 就失敗", () => {
     const lines = summaryLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("已處理 0 筆");
-    expect(lines[0]).not.toContain("尚未被 Telegram 確認");
+    expect(lines[0]).not.toContain("確認結果不明");
   });
 });
 
 describe("寫入失敗中止:摘要也帶分項與未確認筆數", () => {
-  it("第 1 筆寫入、第 2 筆 append 失敗 → 「drain 中止」、1 筆尚未確認、exit 2", async () => {
+  it("第 1 筆寫入、第 2 筆 append 失敗 → 「drain 中止」、1 筆因中止沒送出確認、exit 2", async () => {
     class SecondAppendFails extends MemoryStorage {
       n = 0;
       override async append(row: RefRow): Promise<void> {
@@ -220,7 +223,7 @@ describe("寫入失敗中止:摘要也帶分項與未確認筆數", () => {
     expect(lines[0]).toContain("drain 中止");
     expect(lines[0]).toContain("已處理 1 筆");
     expect(lines[0]).toContain("寫入 1");
-    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain("1 筆因中止沒送出確認");
   });
 });
 
@@ -229,7 +232,7 @@ const LOST_NOTE = "1 筆失敗未寫入、已被確認收走、不會重領";
 const REDO_HINT = "需重新操作(連結請重貼、夯度請重按)";
 
 describe("多批:先前批次有「已確認收走但沒寫入」,後面又中斷/中止 → 摘要兩件事都帶", () => {
-  it("(voc)批 2 的確認 getUpdates 失敗 → 中斷行同時有「1 筆尚未確認」與「1 筆失敗未寫入、已被確認收走」", async () => {
+  it("(voc)批 2 的確認 getUpdates 失敗 → 中斷行同時有「1 筆確認結果不明」與「1 筆失敗未寫入、已被確認收走」", async () => {
     const storage = new IndexBrokenOnCall(new Set([1])); // 批 1 的 link(1) 非暫態失敗
     script = [[textUpdate(1, link(1))], [textUpdate(2, link(2))], conflict409()];
     await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
@@ -240,12 +243,12 @@ describe("多批:先前批次有「已確認收走但沒寫入」,後面又中�
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("drain 中斷");
     expect(lines[0]).toContain("已處理 2 筆");
-    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain("1 筆的確認結果不明");
     expect(lines[0]).toContain(LOST_NOTE);
     expect(lines[0]).toContain(REDO_HINT);
   });
 
-  it("(voc)批 2 某筆 append 暫時失敗而中止 → 中止行同時有「1 筆尚未確認」與「1 筆失敗未寫入、已被確認收走」,exit 2", async () => {
+  it("(voc)批 2 某筆 append 暫時失敗而中止 → 中止行同時有「1 筆沒送出確認」與「1 筆失敗未寫入、已被確認收走」,exit 2", async () => {
     class BrokenIndexThenAppendFails extends IndexBrokenOnCall {
       appends = 0;
       override async append(row: RefRow): Promise<void> {
@@ -263,7 +266,7 @@ describe("多批:先前批次有「已確認收走但沒寫入」,後面又中�
     const lines = summaryLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("drain 中止");
-    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain("1 筆因中止沒送出確認");
     expect(lines[0]).toContain(LOST_NOTE);
     expect(lines[0]).toContain(REDO_HINT);
   });
@@ -287,7 +290,7 @@ describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數
     const line = summaryLines()[0]!;
     expect(line).toContain("已處理 3 筆");
     expect(line).toContain("失敗未寫入 2"); // N
-    expect(line).toContain("其中 2 筆尚未被 Telegram 確認"); // M(批 2 全部)
+    expect(line).toContain("其中 2 筆的確認結果不明"); // M(批 2 全部)
     expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走"); // K(只有批 1 那筆)
     expect(line).not.toContain("其中 2 筆失敗未寫入");
   });
@@ -307,12 +310,12 @@ describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數
     expect(line).toContain("drain 中止");
     expect(line).toContain("已處理 2 筆");
     expect(line).toContain("失敗未寫入 2"); // N
-    expect(line).toContain("其中 1 筆尚未被 Telegram 確認"); // M(批 2 的 u2)
+    expect(line).toContain("其中 1 筆因中止沒送出確認"); // M(批 2 的 u2)
     expect(line).toContain("其中 1 筆失敗未寫入、已被確認收走"); // K(批 1 的 u1)
     expect(line).not.toContain("其中 2 筆失敗未寫入");
   });
 
-  it("(R10 同一批)最後一批裡的未寫入還沒被確認 → 屬於「下輪重領」,不得寫成「已被確認收走」", async () => {
+  it("(R10 同一批)最後一批裡的未寫入還沒被確認 → 算「確認結果不明」那段的 U,不得寫成已被確認收走的 K", async () => {
     const storage = new IndexBrokenOnCall(new Set([2])); // u2(批 2 內)非暫態失敗
     script = [[textUpdate(1, link(1))], [textUpdate(2, link(2)), textUpdate(3, link(3))], conflict409()];
     await expect(runDrain(memoryConfig(), storage, VOC_TARGET)).rejects.toThrow("409");
@@ -321,8 +324,62 @@ describe("多批:K(已被確認收走沒寫入)不等於 N(失敗未寫入總數
     const line = summaryLines()[0]!;
     expect(line).toContain("已處理 3 筆");
     expect(line).toContain("失敗未寫入 1");
-    expect(line).toContain("其中 2 筆尚未被 Telegram 確認");
-    expect(line).not.toContain("已被確認收走");
-    expect(line).not.toContain("需重新操作");
+    expect(line).toContain("其中 2 筆的確認結果不明");
+    // 同批未寫入還沒被確認:不是 K。但屬於「確認結果不明」那段,要被點名(U=1)。
+    expect(line).not.toContain("筆失敗未寫入、已被確認收走、不會重領");
+    expect(line).toContain("有 1 筆未寫入");
+    expect(line).toContain("請核對表上有沒有");
+  });
+});
+
+describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」各說各的", () => {
+  it("(a)伺服器已接受 offset 但回應遺失、重試也失敗 → 不承諾重領,且點名未寫入的那筆", async () => {
+    vi.useFakeTimers();
+    try {
+      // u1 非暫態未寫入;確認那次 getUpdates(offset=2)的回應遺失,4 次重試全是傳輸失敗。
+      // (伺服器端其實可能已把 u1 收走:呼叫端分不出,所以摘要不得說「一定重領」。)
+      const storage = new IndexBrokenOnCall(new Set([1]));
+      const lost = () =>
+        Object.assign(new Error("fetch failed (synthetic response lost)"), { name: "FetchError" });
+      script = [[textUpdate(1, link(1))], lost(), lost(), lost(), lost()];
+      const settled = runDrain(memoryConfig(), storage, VOC_TARGET).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ error }),
+      );
+      await vi.runAllTimersAsync();
+      expect("error" in (await settled)).toBe(true);
+
+      expect(getUpdatesOffsets).toEqual([0, 2, 2, 2, 2]);
+      const lines = summaryLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("已處理 1 筆");
+      expect(lines[0]).toContain("1 筆的確認結果不明");
+      expect(lines[0]).toContain("若未確認,下輪會重領");
+      expect(lines[0]).toContain("若其實已確認,就不會再領");
+      expect(lines[0]).toContain("有 1 筆未寫入");
+      expect(lines[0]).toContain("請核對表上有沒有");
+      expect(lines[0]).not.toContain("尚未被 Telegram 確認");
+      expect(lines[0]).not.toContain("不會加倍");
+      expect(lines[0]).not.toContain("筆失敗未寫入、已被確認收走、不會重領"); // 這筆不確定,不是 K
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("(b)中止而根本沒送出確認的那段 → 可以肯定地說下輪會重領", async () => {
+    class SecondAppendFails extends MemoryStorage {
+      n = 0;
+      override async append(row: RefRow): Promise<void> {
+        this.n += 1;
+        if (this.n === 2) throw new Error("quota exceeded (synthetic)");
+        return super.append(row);
+      }
+    }
+    script = [[textUpdate(1, link(1)), textUpdate(2, link(2))]];
+    await runDrain(memoryConfig(), new SecondAppendFails(), VOC_TARGET);
+    const lines = summaryLines();
+    expect(lines[0]).toContain("1 筆因中止沒送出確認,尚未確認,下輪會重領");
+    expect(lines[0]).not.toContain("確認結果不明");
+    expect(lines[0]).not.toContain("不會加倍");
   });
 });

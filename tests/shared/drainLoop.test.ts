@@ -10,6 +10,7 @@ import {
   drainUpdates,
   exitCodeFor,
   newDrainTally,
+  formatDrainSummary,
   type DrainableBot,
   type PersistFlag,
   type UpdateOutcome,
@@ -233,5 +234,24 @@ describe("exitCodeFor:有訊息被確認收走卻沒寫進表 → 非 0", () => 
     expect(exitCodeFor({ processed: 3, aborted: false }, t)).toBe(3);
     expect(exitCodeFor({ processed: 3, aborted: true }, t)).toBe(2);
     expect(exitCodeFor({ processed: 3, aborted: false })).toBe(0);
+  });
+});
+
+describe("formatDrainSummary:不得無條件承諾「不會加倍」/「去重會擋」(of raw_ 跨台北午夜重領會多一列)", () => {
+  const variants = [
+    ["完成", { processed: 2, aborted: false }, { processed: 2, saved: 2, acked: 2 }],
+    ["純 B", { processed: 1, aborted: false }, { processed: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 }],
+    ["中止", { processed: 2, aborted: true }, { processed: 2, saved: 2 }],
+    ["中止+K", { processed: 2, aborted: true }, { processed: 2, saved: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 }],
+    ["中斷", null, { processed: 2, saved: 2 }],
+    ["中斷+U", null, { processed: 2, saved: 1, unwritten: 1 }],
+    ["中斷+K+U", null, { processed: 3, unwritten: 2, acked: 1, ackedUnwritten: 1 }],
+    ["沒跑", null, {}],
+  ] as const;
+  it.each(variants)("%s", (_name, result, over) => {
+    const line = formatDrainSummary(result, { ...newDrainTally(), ...over });
+    expect(line).not.toContain("不會加倍");
+    expect(line).not.toContain("去重會擋");
+    if (line.includes("下輪會重領")) expect(line).toContain("去重通常會擋");
   });
 });

@@ -139,26 +139,36 @@ jobs:
       # 收錄摘要:把 drain 收尾的「已處理 N 筆」行掛上 run 首頁(Step Summary),
       # 巡檢不用點進 log。行首依 src/shared/drainLoop.ts formatDrainSummary 的開頭分四種
       # (完成 / 有訊息失敗未寫入 / 中止 / 中斷),這裡再加一行白話標籤,讓 owner 不用讀完整行:
-      #   完成=正常;有訊息失敗未寫入=被確認收走但沒進表(不會重領,要重貼);
-      #   中止=寫入失敗、未確認段下輪重領;中斷+一筆都沒領到=沒跑;中斷+其餘=有更新已處理但沒回條;摘要含「已被確認收走」時另補一句需重新操作(多批可同時成立)。
+      #   完成=正常;有訊息失敗未寫入=被確認收走但沒進表(不會重領,需重新操作);
+      #   中止=寫入失敗、未確認段因中止沒送出確認而下輪重領;
+      #   中斷+一筆都沒領到=沒跑;中斷+其餘=確認請求沒拿到成功回應,「確認結果不明」(可能重領、也可能已被收走);
+      #   摘要含「已被確認收走、不會重領」時另補一句需重新操作(多批可同時成立);
+      #   中斷段含未寫入的筆數時另補一句請核對表。
+      # 只認摘要行的固定開頭(INFO/ERROR + drain 完成:/有訊息失敗未寫入/中止/中斷 + 已處理 N 筆更新),
+      # log 裡別的含「已處理」的行不會被取錯。
       # grep 無命中(target 跳過/守門擋下/drain 沒跑到收尾)不可紅 → 接 || 給 fallback 行,step 永遠綠。
       - name: Step summary (${{ matrix.target }})
         if: always()
         run: |
-          LINE=$(grep '已處理' drain.log 2>/dev/null | tail -n 1 || true)
+          LINE=$(grep -E ' (INFO|ERROR) drain (完成:|有訊息失敗未寫入|中止|中斷).*已處理 [0-9]+ 筆更新' drain.log 2>/dev/null | tail -n 1 || true)
           case "$LINE" in
             "") LABEL="⚪ 沒有「已處理」行:target 跳過、secrets 守門擋下,或 drain 未跑到收尾" ;;
             *"drain 完成:"*) LABEL="✅ 正常收尾" ;;
             *"drain 有訊息失敗未寫入"*) LABEL="🔴 有訊息被確認收走但沒寫進表(不會重領,需重新操作:連結重貼、夯度重按)" ;;
-            *"drain 中止"*) LABEL="🔴 寫入失敗中止(未確認段下輪重領)" ;;
+            *"drain 中止"*) LABEL="🔴 寫入失敗中止(未確認段因中止沒送出確認,下輪重領)" ;;
             *"drain 中斷"*"一筆都沒領到"*) LABEL="🔴 沒跑:一筆都沒領到" ;;
-            *"drain 中斷"*) LABEL="🔴 有更新已處理但沒回條(尚未確認,下輪重領,去重會擋)" ;;
+            *"drain 中斷"*) LABEL="🔴 有更新已處理但確認結果不明(可能下輪重領,也可能已被收走不再領;去重通常會擋)" ;;
             *) LABEL="⚪ 無法判讀的收尾行" ;;
           esac
-          # 多批時「未確認段會重領」與「先前批次已被收走、沒寫進表」可同時成立,兩件事都要看得到。
+          # 多批時「未確認段」與「先前批次已被收走、沒寫進表(K)」可同時成立,兩件事都要看得到。
+          # K 的固定字樣是「失敗未寫入、已被確認收走、不會重領」;中斷段的「若其實已被確認收走」是 U,不是 K。
           case "$LINE" in
-            *"drain 中止"*"已被確認收走"*|*"drain 中斷"*"已被確認收走"*)
+            *"drain 中止"*"失敗未寫入、已被確認收走、不會重領"*|*"drain 中斷"*"失敗未寫入、已被確認收走、不會重領"*)
               LABEL="$LABEL;另有已被確認收走、沒寫進表的訊息,需重新操作(連結重貼、夯度重按)" ;;
+          esac
+          case "$LINE" in
+            *"drain 中斷"*"請核對表上有沒有"*)
+              LABEL="$LABEL;確認結果不明的那段裡有未寫入的更新,請核對表上有沒有,沒有就重新操作" ;;
           esac
           {
             echo "### drain ${{ matrix.target }}"
@@ -214,7 +224,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Error annotation (API-blip resilient)
-        run: echo "::error::collector drain 收場為 ${{ needs.drain.result }} —— ${{ needs.drain.result == 'cancelled' && '這輪抓片佇列沒排空,需要重跑。' || '若 run 頁收尾行開頭是「drain 有訊息失敗未寫入」,佇列已排空、不用重跑,請照行內說明重新操作;若開頭是「drain 中斷」或「drain 中止」且帶「已被確認收走」,是兩件事:未確認段下輪會自動重領,已被收走沒寫入的要重新操作;其餘情況這輪沒做完,需要重跑。' }}"
+        run: echo "::error::collector drain 收場為 ${{ needs.drain.result }} —— ${{ needs.drain.result == 'cancelled' && '這輪抓片佇列可能沒排空,請看 run 頁收尾行,必要時重跑。' || '若 run 頁收尾行開頭是「drain 有訊息失敗未寫入」,佇列已排空、不用重跑,請照行內說明重新操作;若開頭是「drain 中斷」或「drain 中止」:中止的未確認段下輪會自動重領,中斷的未確認段確認結果不明(可能不會再領),請照行內說明核對表上有沒有,另外帶「已被確認收走、不會重領」的那些要重新操作;其餘情況這輪沒做完,需要重跑。' }}"
 
       - name: Report to Kai (kai-notify, fail-soft)
         uses: pei760730/kai-notify@v1
@@ -222,4 +232,4 @@ jobs:
           KAI_NOTIFY_BOT_TOKEN: ${{ secrets.KAI_NOTIFY_BOT_TOKEN }}
           KAI_NOTIFY_CHAT_ID: ${{ secrets.KAI_NOTIFY_CHAT_ID }}
         with:
-          text: "${{ needs.drain.result == 'cancelled' && '🟠 collector drain 被中止(逾時或人為按停) —— 這輪抓片佇列沒排空,需要重跑' || '🔴 collector drain 失敗(job 層警報:若沒收到帶錯誤細節的那則,代表 job 在第一個步驟開始前就死了,這輪沒做完、需要重跑;若 run 頁收尾行開頭是「drain 有訊息失敗未寫入」,佇列已排空、不用重跑,請照行內說明重新操作;若開頭是「drain 中斷」或「drain 中止」且帶「已被確認收走」,是兩件事:未確認段下輪會自動重領,已被收走沒寫入的要重新操作)' }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          text: "${{ needs.drain.result == 'cancelled' && '🟠 collector drain 被中止(逾時或人為按停) —— 這輪抓片佇列可能沒排空,請看 run 頁收尾行,必要時重跑' || '🔴 collector drain 失敗(job 層警報:若沒收到帶錯誤細節的那則,代表 job 在第一個步驟開始前就死了,這輪沒做完、需要重跑;若 run 頁收尾行開頭是「drain 有訊息失敗未寫入」,佇列已排空、不用重跑,請照行內說明重新操作;若開頭是「drain 中斷」或「drain 中止」:中止的未確認段下輪會自動重領,中斷的未確認段確認結果不明(可能不會再領),請照行內說明核對表上有沒有,另外帶「已被確認收走、不會重領」的那些要重新操作)' }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

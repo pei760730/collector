@@ -168,9 +168,26 @@ function otherCount(t: DrainTally): number {
 export function formatDrainSummary(result: DrainResult | null, t: DrainTally): string {
   const counts = `寫入 ${t.saved}、重複 ${t.duplicate}、失敗未寫入 ${t.unwritten}、其他 ${otherCount(t)}`;
   const unacked = t.processed - t.acked;
-  const unackedNote =
-    unacked > 0 ? `;其中 ${unacked} 筆尚未被 Telegram 確認(下輪會重領,去重會擋,不會加倍)` : "";
-  // 先前批次已被確認收走、沒寫進表的筆數:跟「未確認段會重領」是兩件事,兩者可同時成立,
+  // 兩種「未確認」來源,說法不同(程式只分得出這兩種:result.aborted 與 result === null):
+  //  - 中止(result.aborted):迴圈 break 後根本沒再呼叫 getUpdates,確認請求沒送出,
+  //    Telegram 端一定沒收到 → 可以肯定地說下輪會重領。
+  //  - 中斷(result === null):確認請求已送出但沒拿到成功回應(傳輸失敗或被拒)。若是回應遺失,
+  //    伺服器端可能已經接受了新 offset → 呼叫端分不出,所以只能說「結果不明」,不可承諾重領。
+  // 「去重通常會擋」:of/ofgay 抽不出影片 ID 的 raw_ 更新跨台北午夜重領會多一列(刻意政策),
+  // 共用摘要不知道自己是哪個 target,措辭要對所有 target 都成立。
+  const abortedUnackedNote =
+    unacked > 0
+      ? `;其中 ${unacked} 筆因中止沒送出確認,尚未確認,下輪會重領,去重通常會擋`
+      : "";
+  const uncertainUnwritten = t.unwritten - t.ackedUnwritten; // 確認結果不明那段裡的未寫入
+  const uncertainNote =
+    unacked > 0
+      ? `;其中 ${unacked} 筆的確認結果不明(Telegram 沒回應成功):若未確認,下輪會重領,去重通常會擋;若其實已確認,就不會再領` +
+        (uncertainUnwritten > 0
+          ? `;這 ${unacked} 筆裡有 ${uncertainUnwritten} 筆未寫入:若其實已被確認收走就不會重領,請核對表上有沒有,沒有就重新操作(連結請重貼、夯度請重按)`
+          : "")
+      : "";
+  // 先前批次已被確認收走、沒寫進表的筆數:跟「未確認段」是兩件事,兩者可同時成立,
   // 所以中斷/中止/收尾三種摘要都要各自帶出(連結要重貼、夯度要重按,不是同一種補救)。
   const lostNote =
     t.ackedUnwritten > 0
@@ -179,10 +196,10 @@ export function formatDrainSummary(result: DrainResult | null, t: DrainTally): s
   if (result === null) {
     return t.processed === 0
       ? "drain 中斷(領取更新失敗):已處理 0 筆更新,一筆都沒領到"
-      : `drain 中斷(領取/確認更新失敗):已處理 ${t.processed} 筆更新(${counts})${unackedNote}${lostNote}`;
+      : `drain 中斷(領取/確認更新失敗):已處理 ${t.processed} 筆更新(${counts})${uncertainNote}${lostNote}`;
   }
   if (result.aborted) {
-    return `drain 中止(寫入失敗,部分未處理):已處理 ${t.processed} 筆更新(${counts})${unackedNote}${lostNote}`;
+    return `drain 中止(寫入失敗,部分未處理):已處理 ${t.processed} 筆更新(${counts})${abortedUnackedNote}${lostNote}`;
   }
   if (t.ackedUnwritten > 0) {
     return `drain 有訊息失敗未寫入:已處理 ${t.processed} 筆更新(${counts})${lostNote}`;

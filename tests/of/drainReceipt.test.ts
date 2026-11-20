@@ -2,7 +2,7 @@
  * of / ofgay 與 voc/tbvoc 共用 shared/drainLoop.ts 的迴圈與回條;of 自己的 router/ingest
  * 要把「寫入/重複/失敗未寫入」回報進同一個 side-channel。這裡用 of 真的 createBot 驗證:
  *   - B:去重索引讀取丟非暫態錯 → 被確認收走但沒寫進暫存區 → 摘要分項、exit 非 0
- *   - A:確認那次 getUpdates 失敗 → 印「已處理 N 筆、M 筆尚未確認」、仍 reject
+ *   - A:確認那次 getUpdates 失敗 → 印「已處理 N 筆、M 筆的確認結果不明」、仍 reject
  *   - 沒跑:第一次 getUpdates 就失敗 → 已處理 0 筆
  * of drain.ts 是 entry(import 即執行),所以走它用的同一組共用函式。全為合成資料。
  */
@@ -124,15 +124,16 @@ describe("of 引擎:共用迴圈回條", () => {
     expect(exitCodeFor(result, tally)).toBe(0);
   });
 
-  it("A:確認那次 getUpdates 失敗 → 印「2 筆尚未被 Telegram 確認」並照舊 reject;重跑不加倍", async () => {
+  it("A:確認那次 getUpdates 失敗 → 印「2 筆的確認結果不明」並照舊 reject;重跑不加倍", async () => {
     const storage = new MemoryStorage();
     const h = harness(storage, [[textUpdate(1, link(1)), textUpdate(2, link(2))], conflict409()]);
     await expect(drainWithTally(h.fake as never, h.persist, "暫存區")).rejects.toThrow("409");
     const lines = summaryLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("已處理 2 筆");
-    expect(lines[0]).toContain("2 筆尚未被 Telegram 確認");
-    expect(lines[0]).toContain("去重會擋");
+    expect(lines[0]).toContain("2 筆的確認結果不明");
+    expect(lines[0]).toContain("去重通常會擋");
+    expect(lines[0]).not.toContain("不會加倍");
 
     // 下一輪重領同批:不加倍
     const h2 = harness(storage, [[textUpdate(1, link(1)), textUpdate(2, link(2))]]);
@@ -158,17 +159,33 @@ describe("of 引擎:共用迴圈回條", () => {
     const lines = summaryLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("drain 中斷");
-    expect(lines[0]).toContain("1 筆尚未被 Telegram 確認");
+    expect(lines[0]).toContain("1 筆的確認結果不明");
     expect(lines[0]).toContain("1 筆失敗未寫入、已被確認收走、不會重領");
     expect(lines[0]).toContain("需重新操作(連結請重貼、夯度請重按)");
   });
 
-  it("沒跑:第一次 getUpdates 就失敗 → 已處理 0 筆,且不含「尚未被 Telegram 確認」", async () => {
+  it("raw_ 同日重領(findRawReplay 命中)與已核准閘門命中,都記成「重複」而不是「其他」", async () => {
+    const unsupported = "https://synthetic.example.invalid/some/page";
+    const storage = new MemoryStorage([], { approvedUrls: [link(9)] });
+    const h = harness(storage, [
+      [textUpdate(1, unsupported), textUpdate(2, unsupported), textUpdate(3, link(9))],
+    ]);
+    const { result, tally } = await drainWithTally(h.fake as never, h.persist, "暫存區");
+    logDrainSummary(result, tally);
+    expect(tally.saved).toBe(1); // 第一次 raw_ 寫入
+    expect(tally.duplicate).toBe(2); // raw_ 重領 + 已核准閘門
+    const line = summaryLines()[0]!;
+    expect(line).toContain("寫入 1");
+    expect(line).toContain("重複 2");
+    expect(line).toContain("其他 0");
+  });
+
+  it("沒跑:第一次 getUpdates 就失敗 → 已處理 0 筆,且不含「確認結果不明」", async () => {
     const h = harness(new MemoryStorage(), [conflict409()]);
     await expect(drainWithTally(h.fake as never, h.persist, "暫存區")).rejects.toThrow("409");
     const lines = summaryLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("已處理 0 筆");
-    expect(lines[0]).not.toContain("尚未被 Telegram 確認");
+    expect(lines[0]).not.toContain("確認結果不明");
   });
 });
