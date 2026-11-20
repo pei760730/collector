@@ -252,7 +252,7 @@ describe("formatDrainSummary:不得無條件承諾「不會加倍」/「去重�
     const line = formatDrainSummary(result, { ...newDrainTally(), ...over });
     expect(line).not.toContain("不會加倍");
     expect(line).not.toContain("去重會擋");
-    if (line.includes("下輪會重領")) expect(line).toContain("去重通常會擋");
+    if (line.includes("才會重領")) expect(line).toContain("去重通常會擋");
   });
 });
 
@@ -303,5 +303,41 @@ describe("formatDrainSummary:推論不得寫成肯定句(表上現況、重領�
     expect(line).not.toContain("需重新操作");
     expect(line).not.toContain("失敗未寫入、已被確認收走");
     expect(line).toMatch(/請(先)?核對/);
+  });
+});
+
+describe("formatDrainSummary:「重領」是預測,一律帶前提(下一輪成功領取 + 仍在保留期內)", () => {
+  const variants = [
+    ["中止", { processed: 2, aborted: true }, { processed: 2, saved: 2 }],
+    ["中止+K", { processed: 2, aborted: true }, { processed: 2, saved: 1, unwritten: 1, acked: 1, ackedUnwritten: 1 }],
+    ["中斷", null, { processed: 2, saved: 2 }],
+    ["中斷+U", null, { processed: 1, unwritten: 1 }],
+  ] as const;
+  it.each(variants)("%s:不出現不帶前提的「下輪會重領」類字樣,且講明保留期與下一輪須成功領取", (_n, result, over) => {
+    const line = formatDrainSummary(result, { ...newDrainTally(), ...over });
+    for (const bad of ["下輪會重領", "下輪重領", "會自動重領", "下輪會自動重領"]) {
+      expect(line).not.toContain(bad);
+    }
+    expect(line).toContain("下一輪若成功領取");
+    expect(line).toContain("保留期內");
+    expect(line).toContain("才會重領");
+  });
+});
+
+describe("drainUpdates:handler 已回報去向之後才 reject → 去向維持,不被改判成 unwritten", () => {
+  it.each(["saved", "duplicate"] as const)("已回報 %s 後 handleUpdate 丟例外 → 仍算 %s", async (outcome) => {
+    const persist: PersistFlag = { failed: false };
+    const { bot } = makeFakeBot({
+      updates: [upd(1)],
+      persist,
+      outcomes: new Map<number, UpdateOutcome[]>([[1, [outcome]]]),
+      throwOn: new Set([1]),
+    });
+    const tally = newDrainTally();
+    const result = await drainUpdates(bot, persist, "測試目的地", tally);
+    expect(result).toEqual({ processed: 1, aborted: false });
+    expect(tally[outcome]).toBe(1);
+    expect(tally.unwritten).toBe(0);
+    expect(tally.ackedUnwritten).toBe(0);
   });
 });

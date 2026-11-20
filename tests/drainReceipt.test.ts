@@ -161,7 +161,8 @@ describe("A 已寫入但沒回條(確認那次 getUpdates 失敗)", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("已處理 2 筆");
     expect(lines[0]).toContain("2 筆的確認結果不明");
-    expect(lines[0]).toContain("若未確認,下輪會重領");
+    expect(lines[0]).toContain("若其實未確認,下一輪若成功領取且仍在保留期內");
+    expect(lines[0]).not.toContain("下輪會重領");
     expect(lines[0]).toContain("若其實已確認,就不會再領");
     expect(lines[0]).toContain("去重通常會擋");
     expect(lines[0]).not.toContain("尚未被 Telegram 確認");
@@ -372,7 +373,8 @@ describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」�
       expect(lines).toHaveLength(1);
       expect(lines[0]).toContain("已處理 1 筆");
       expect(lines[0]).toContain("1 筆的確認結果不明");
-      expect(lines[0]).toContain("若未確認,下輪會重領");
+      expect(lines[0]).toContain("若其實未確認,下一輪若成功領取且仍在保留期內");
+    expect(lines[0]).not.toContain("下輪會重領");
       expect(lines[0]).toContain("若其實已確認,就不會再領");
       expect(lines[0]).toContain("有 1 筆這一輪沒有寫入");
       expect(lines[0]).toContain("請核對表上有沒有");
@@ -404,7 +406,10 @@ describe("確認結果不明 vs 因中止沒送出確認:兩種「未確認」�
     script = [[textUpdate(1, link(1)), textUpdate(2, link(2))]];
     await runDrain(memoryConfig(), new SecondAppendFails(), VOC_TARGET);
     const lines = summaryLines();
-    expect(lines[0]).toContain("1 筆因中止沒送出確認,尚未確認,下輪會重領");
+    expect(lines[0]).toContain("1 筆因中止沒送出確認,尚未確認");
+    expect(lines[0]).toContain("下一輪若成功領取、且更新還在 Telegram 保留期內");
+    expect(lines[0]).toContain("才會重領");
+    expect(lines[0]).not.toContain("下輪會重領");
     expect(lines[0]).not.toContain("確認結果不明");
     expect(lines[0]).not.toContain("不會加倍");
   });

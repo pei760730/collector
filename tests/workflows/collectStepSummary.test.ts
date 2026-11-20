@@ -50,7 +50,7 @@ describe("collect.yml Step Summary:多批時「未確認段」與「已被收走
     expect(status).toBe(0);
     const label = summary.split("\n")[1]!;
     expect(label).toContain("確認結果不明");
-    expect(label).not.toContain("下輪重領,去重");
+    expect(label).not.toContain("下輪重領");
     expect(label).toContain("另有這一輪沒有寫入就被確認收走");
     expect(label).toContain("請先核對,沒有再重貼連結");
   });
@@ -61,7 +61,7 @@ describe("collect.yml Step Summary:多批時「未確認段」與「已被收走
     expect(status).toBe(0);
     const label = summary.split("\n")[1]!;
     expect(label).toContain("因中止沒送出確認");
-    expect(label).toContain("下輪重領");
+    expect(label).toContain("下一輪若成功領取且更新仍在保留期內才會重領");
     expect(label).toContain("另有這一輪沒有寫入就被確認收走");
     expect(label).toContain("請先核對,沒有再重貼連結");
   });
@@ -127,11 +127,14 @@ describe("collect.yml job 層失敗通知:每種收尾下文字各自為真", ()
     expect(clause).toContain("drain 中止");
     expect(clause).toContain("這一輪沒有寫入(寫入前出錯)、已被確認收走、不會重領");
     expect(clause).toContain("中止的未確認段沒送出確認");
-    expect(clause).toContain("下輪會自動重領");
+    expect(clause).toContain("下一輪若成功領取且更新仍在保留期內才會重領");
     expect(clause).toContain("中斷的未確認段確認結果不明");
     expect(clause).toContain("請先核對");
     expect(clause).not.toContain("不用重跑");
     expect(clause).not.toContain("佇列已排空");
+    for (const bad of ["下輪會重領", "下輪重領", "會自動重領", "下輪會自動重領"]) {
+      expect(clause).not.toContain(bad);
+    }
   });
 
   it("cancelled 分支只說「可能沒排空」;公共尾巴不再無條件套「需要重跑」", () => {
@@ -222,5 +225,34 @@ describe("collect.yml 標籤與失敗通知:不把推論寫成肯定句", () => 
       expect(t).not.toContain("重新操作");
       expect(t).toContain("請先核對");
     }
+  });
+});
+
+describe("collect.yml:標籤與失敗通知不得出現不帶前提的「重領」預測", () => {
+  const workflow = readFileSync(workflowPath, "utf8");
+  const bad = ["下輪會重領", "下輪重領", "會自動重領", "下輪會自動重領"];
+  it("workflow 全文(標籤、通知)都沒有不帶前提的字樣", () => {
+    // 註解裡描述性文字也一併要求,避免文件與行為再度分叉
+    for (const phrase of bad) expect(workflow).not.toContain(phrase);
+  });
+  it("job 層通知不再斷言「代表 job 在第一個步驟開始前就死了」", () => {
+    expect(workflow).not.toContain("代表 job 在第一個步驟開始前就死了");
+    const block = workflow.slice(workflow.indexOf("  notify-broken:"));
+    expect(block).toContain("可能是 job 在第一個步驟前就失敗,或帶錯誤細節的那則通知本身沒送成");
+  });
+});
+
+describe("README:「怎麼讀 run 結果」不含不帶前提的「重領」預測,也不把肯定句說成都是條件句", () => {
+  const readme = readFileSync(new URL("../../README.md", import.meta.url), "utf8");
+  const section = readme.slice(readme.indexOf("**怎麼讀每個 target 的 run 結果**"), readme.indexOf("## 開發"));
+  it("沒有不帶前提的字樣", () => {
+    for (const phrase of ["下輪會重領", "下輪重領", "會自動重領", "下輪會自動重領", "下一輪會重領"]) {
+      expect(section).not.toContain(phrase);
+    }
+    expect(section).toContain("下一輪若成功領取、且更新還在 Telegram 保留期內");
+  });
+  it("不再說收尾行「只會」用條件句;改成分清確知與推論", () => {
+    expect(section).not.toContain("收尾行只會用");
+    expect(section).toContain("親眼看到");
   });
 });
