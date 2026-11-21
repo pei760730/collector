@@ -167,10 +167,11 @@ describe("router 夯度 callback(tbvoc)", () => {
     transient.code = 429;
     vi.spyOn(storage, "setHot").mockRejectedValue(transient);
     let persistFailed = false;
+    const outcomes: string[] = [];
     const bot = createBot(
       memoryConfig(),
       storage,
-      { onPersistError: () => (persistFailed = true) },
+      { onPersistError: () => (persistFailed = true), onOutcome: (o) => outcomes.push(o) },
       TBVOC_TARGET,
     );
     bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
@@ -178,6 +179,7 @@ describe("router 夯度 callback(tbvoc)", () => {
     await bot.handleUpdate(callbackUpdate(hotCbData(0, dedupKey(link))));
 
     expect(persistFailed).toBe(true); // 夯度 tap 不因暫態故障被 ack 掉永久丟失
+    expect(outcomes).toEqual([]); // 會重領 → 不算「已確認但沒寫」
     expect(cbAnswers.some((t) => t === "標記失敗")).toBe(true);
   });
 
@@ -185,10 +187,11 @@ describe("router 夯度 callback(tbvoc)", () => {
     const storage = new MemoryStorage([seedRow(link)]);
     vi.spyOn(storage, "setHot").mockRejectedValue(new Error("表結構壞了(非暫態)"));
     let persistFailed = false;
+    const outcomes: string[] = [];
     const bot = createBot(
       memoryConfig(),
       storage,
-      { onPersistError: () => (persistFailed = true) },
+      { onPersistError: () => (persistFailed = true), onOutcome: (o) => outcomes.push(o) },
       TBVOC_TARGET,
     );
     bot.botInfo = { id: 1, is_bot: true, first_name: "bot", username: "testbot" } as typeof bot.botInfo;
@@ -196,6 +199,8 @@ describe("router 夯度 callback(tbvoc)", () => {
     await bot.handleUpdate(callbackUpdate(hotCbData(0, dedupKey(link))));
 
     expect(persistFailed).toBe(false);
+    // 夯度寫入結果不在回條分項內(setHot 可能其實已落表只是回應遺失,不能斷言「沒寫入」):不回報去向
+    expect(outcomes).toEqual([]);
     expect(cbAnswers.some((t) => t === "標記失敗")).toBe(true);
   });
 
