@@ -14,13 +14,21 @@ function watchdogScript(): string {
   return block.replace(/^ {10}/gm, "");
 }
 
-function runStub(ageHours: number | null, dispatchFails = false, apiFails = false) {
-  const createdAt = ageHours === null ? "" : new Date(Date.now() - ageHours * 3_600_000).toISOString();
+function runStub(ageHours: number | null, dispatchFails = false, apiFails = false, apiBody?: string) {
+  const createdAt = ageHours === null ? null : new Date(Date.now() - ageHours * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
   const script = `
     gh() {
       if [ "$1" = api ]; then
-        if [ "$STUB_API_FAILS" = true ]; then return 1; fi
-        printf '%s\\n' "$STUB_CREATED_AT"
+        if [ "$STUB_API_FAILS" = true ]; then
+          printf '%s\\n' "$STUB_API_BODY"
+          echo private-cli-error >&2
+          return 1
+        fi
+        if [ "$3" = --jq ]; then
+          printf '%s\\n' "$STUB_API_BODY" | jq -r "$4"
+        else
+          printf '%s\\n' "$STUB_API_BODY"
+        fi
       elif [ "$1" = workflow ] && [ "$2" = run ]; then
         echo STUB_DISPATCH
         if [ "$STUB_DISPATCH_FAILS" = true ]; then return 1; fi
@@ -50,7 +58,7 @@ function runStub(ageHours: number | null, dispatchFails = false, apiFails = fals
       RUN_URL: "https://example.com/actions/runs/123",
       GITHUB_OUTPUT: outputFile,
       GITHUB_STEP_SUMMARY: summaryFile,
-      STUB_CREATED_AT: createdAt,
+      STUB_API_BODY: apiBody ?? JSON.stringify({ workflow_runs: createdAt === null ? [] : [{ created_at: createdAt }] }),
       STUB_DISPATCH_FAILS: String(dispatchFails),
       STUB_API_FAILS: String(apiFails),
     },
@@ -94,6 +102,31 @@ describe("heartbeat bash watchdog", () => {
     const result = runStub(0, false, true);
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout + result.stderr).not.toContain("private-cli-error");
+  });
+
+  it.each([
+    ["缺 workflow_runs", '{"unexpected":"private-marker"}'],
+    ["workflow_runs 非陣列", '{"workflow_runs":null}'],
+    ["run 缺 created_at", '{"workflow_runs":[{}]}'],
+    ["空 HTTP body", ""],
+    ["無效時間戳", '{"workflow_runs":[{"created_at":"private-marker"}]}'],
+    ["不可能的日期", '{"workflow_runs":[{"created_at":"2026-02-30T00:00:00Z"}]}'],
+    ["無效 JSON", '{"private-marker":'],
+    ["多個 JSON 文件", '{"workflow_runs":[]} {"workflow_runs":[]}'],
+  ])("%s → 證據不明，不補觸發也不輸出 body", (_label, body) => {
+    const result = runStub(null, false, false, body);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout).not.toContain("alert=false");
+    expect(result.stdout + result.stderr).not.toContain("private-marker");
+  });
+
+  it("未來時間戳不是新鮮度證據，也不能用來補觸發", () => {
+    const result = runStub(-1);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout).not.toContain("alert=false");
   });
 });
 
