@@ -58,7 +58,7 @@ function runStub(ageHours: number | null, dispatchFails = false, apiFails = fals
       RUN_URL: "https://example.com/actions/runs/123",
       GITHUB_OUTPUT: outputFile,
       GITHUB_STEP_SUMMARY: summaryFile,
-      STUB_API_BODY: apiBody ?? JSON.stringify({ workflow_runs: createdAt === null ? [] : [{ created_at: createdAt }] }),
+      STUB_API_BODY: apiBody ?? JSON.stringify({ total_count: createdAt === null ? 0 : 1, workflow_runs: createdAt === null ? [] : [{ created_at: createdAt }] }),
       STUB_DISPATCH_FAILS: String(dispatchFails),
       STUB_API_FAILS: String(apiFails),
     },
@@ -107,6 +107,13 @@ describe("heartbeat bash watchdog", () => {
 
   it.each([
     ["缺 workflow_runs", '{"unexpected":"private-marker"}'],
+    ["空陣列但 total_count 為正數", '{"workflow_runs":[],"total_count":1}'],
+    ["空陣列但 total_count 為負數", '{"workflow_runs":[],"total_count":-1}'],
+    ["空陣列但 total_count 為小數", '{"workflow_runs":[],"total_count":0.5}'],
+    ["空陣列但 total_count 是字串", '{"workflow_runs":[],"total_count":"0"}'],
+    ["空陣列但 total_count 是布林值", '{"workflow_runs":[],"total_count":false}'],
+    ["空陣列但 total_count 是 null", '{"workflow_runs":[],"total_count":null}'],
+    ["空陣列但缺 total_count", '{"workflow_runs":[]}'],
     ["workflow_runs 非陣列", '{"workflow_runs":null}'],
     ["run 缺 created_at", '{"workflow_runs":[{}]}'],
     ["空 HTTP body", ""],
