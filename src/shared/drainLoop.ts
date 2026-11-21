@@ -176,19 +176,20 @@ export function formatDrainSummary(result: DrainResult | null, t: DrainTally): s
   // 兩種「未確認」來源,說法不同(程式只分得出這兩種:result.aborted 與 result === null):
   //  - 中止(result.aborted):迴圈 break 後根本沒再呼叫 getUpdates,確認請求沒送出,
   //    Telegram 端一定沒收到。但「重領」仍是對未來的預測:下一輪要成功領取、且更新還在
-  //    Telegram 保留期內(約 24 小時,從訊息送出起算,不是從本輪中止重算)才領得到,所以帶前提。
+  //    Telegram 保留期內才領得到,所以帶前提。保留期只寫官方講的上限(Bot API:"will not be kept
+  //    longer than 24 hours"),官方沒說從何時起算,摘要不替它補。
   //  - 中斷(result === null):確認請求已送出但沒拿到成功回應(傳輸失敗或被拒)。若是回應遺失,
   //    伺服器端可能已經接受了新 offset → 呼叫端分不出,所以只能說「結果不明」,不可承諾重領。
   // 「去重通常會擋」:of/ofgay 抽不出影片 ID 的 raw_ 更新跨台北午夜重領會多一列(刻意政策),
   // 共用摘要不知道自己是哪個 target,措辭要對所有 target 都成立。
   const abortedUnackedNote =
     unacked > 0
-      ? `;其中 ${unacked} 筆因中止沒送出確認,尚未確認:下一輪若成功領取、且更新還在 Telegram 保留期內(約 24 小時,從訊息送出起算),才會重領,去重通常會擋`
+      ? `;其中 ${unacked} 筆因中止沒送出確認,尚未確認:下一輪若成功領取、且更新還在 Telegram 保留期內(最長 24 小時),才會重領,去重通常會擋`
       : "";
   const uncertainUnwritten = t.unwritten - t.ackedUnwritten; // 確認結果不明那段裡的未寫入
   const uncertainNote =
     unacked > 0
-      ? `;其中 ${unacked} 筆的確認結果不明(Telegram 沒回應成功):若其實未確認,下一輪若成功領取且仍在保留期內(約 24 小時,從訊息送出起算)才會重領,去重通常會擋;若其實已確認,就不會再領` +
+      ? `;其中 ${unacked} 筆的確認結果不明(Telegram 沒回應成功):若其實未確認,下一輪若成功領取且仍在保留期內(最長 24 小時)才會重領,去重通常會擋;若其實已確認,就不會再領` +
         (uncertainUnwritten > 0
           ? `;這 ${unacked} 筆裡有 ${uncertainUnwritten} 筆這一輪沒有寫入(寫入前出錯):若其實已被確認收走就不會重領,請核對表上有沒有,沒有再重貼連結`
           : "")

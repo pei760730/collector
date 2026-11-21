@@ -319,7 +319,10 @@ describe("formatDrainSummary:「重領」是預測,一律帶前提(下一輪成�
       expect(line).not.toContain(bad);
     }
     expect(line).toContain("下一輪若成功領取");
-    expect(line).toContain("保留期內");
+    expect(line).toContain("保留期內(最長 24 小時)");
+    // 官方只給上限、沒說從何時起算:摘要不得自己補起算點或寫成「約」。
+    expect(line).not.toContain("起算");
+    expect(line).not.toContain("約 24");
     expect(line).toContain("才會重領");
   });
 });
