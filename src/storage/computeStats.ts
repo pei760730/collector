@@ -25,7 +25,7 @@ export function computeStats(
   }
 
   // 最近 N 筆 = 檔尾(append 在尾端,愈後面愈新)
-  const recent = pool.slice(-opts.recentLimit).reverse();
+  const recent = opts.recentLimit > 0 ? pool.slice(-opts.recentLimit).reverse() : [];
 
   return {
     total: pool.length,
