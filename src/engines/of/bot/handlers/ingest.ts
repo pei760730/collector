@@ -23,6 +23,7 @@ import type { Storage } from "../../storage/Storage.js";
 import { logger } from "../../utils/logger.js";
 import { errSummary } from "../../../../shared/errorSummary.js";
 import { AppendVerificationError } from "../../../../shared/appendIdempotency.js";
+import type { UpdateOutcome } from "../../../../shared/drainLoop.js";
 import {
   formatErrorMsg,
   savedMsg,
@@ -56,6 +57,8 @@ export interface IngestDeps {
    * 得知「這筆沒持久化」,好停在當前 offset、不 ack、下次 cron 重領,避免靜默丟資料。
    */
   onPersistError?: () => void;
+  /** 本筆去向(saved/duplicate)—— drain 收尾回條用;沒傳 = 常駐版/測試,行為不變。 */
+  onOutcome?: (outcome: UpdateOutcome) => void;
 }
 
 export interface IngestResult {
@@ -112,12 +115,16 @@ export async function runIngest(
       if (!ex.unsupported) {
         // 查 in-memory 去重索引 / 總表集合(單輪 drain 各只讀一次全表後快取,取代逐訊息全表掃描)。
         const hit = (await deps.storage.videoIdIndex()).get(ex.videoId.trim());
-        if (hit) return { reply: duplicateMsg(hit.row) };
+        if (hit) {
+          deps.onOutcome?.("duplicate");
+          return { reply: duplicateMsg(hit.row) };
+        }
 
         // 閘門鍵兩側都走 approvedGateKey(= groupKey ∘ cleanUrl):同一支片換分享形態
         // (youtu.be ↔ watch?v=)或帶沒收錄過的新分享參數,都算同一把鍵、擋得住。
         // 這裡一定抽得到 id(在 !ex.unsupported 分支內),所以鍵是 `平台_id` 不是路徑 fallback。
         if ((await deps.storage.approvedKeySet()).has(approvedGateKey(row.CLEAN_URL))) {
+          deps.onOutcome?.("duplicate");
           return { reply: approvedDuplicateMsg(row.CLEAN_URL) };
         }
       } else {
@@ -132,7 +139,10 @@ export async function runIngest(
         //     代價:跨午夜的重領護欄失手 → 多一列重複給人工看(可見、可刪,比擋掉跨日重貼
         //     的靜默丟失好)。
         const hit = await deps.storage.findRawReplay(row.CLEAN_URL, row.DATE);
-        if (hit) return { reply: duplicateMsg(hit.row) };
+        if (hit) {
+          deps.onOutcome?.("duplicate");
+          return { reply: duplicateMsg(hit.row) };
+        }
       }
 
       appending = true;
@@ -150,6 +160,7 @@ export async function runIngest(
       };
     }
 
+    deps.onOutcome?.("saved");
     logger.info(`收錄 ${row.PLATFORM} ${row.VIDEO_ID} (${row.STATUS})`);
     // unsupported(raw_*)也帶截斷提醒:截斷過的 URL 進 raw_ 給人工看時,
     // 分享者當下不講,審核的人只會對著半截連結困惑。

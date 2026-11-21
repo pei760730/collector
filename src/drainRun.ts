@@ -9,7 +9,13 @@ import { createBot } from "./bot/router.js";
 import type { Config } from "./config.js";
 import type { Storage } from "./storage/Storage.js";
 import { VOC_TARGET, type TargetSpec } from "./targets.js";
-import { drainUpdates, exitCodeFor, type PersistFlag } from "./shared/drainLoop.js";
+import {
+  drainHooks,
+  drainWithTally,
+  exitCodeFor,
+  logDrainSummary,
+  type PersistFlag,
+} from "./shared/drainLoop.js";
 import { callTelegramWithRetry } from "./shared/telegramRetry.js";
 import { logger } from "./utils/logger.js";
 import { errSummary } from "./shared/errorSummary.js";
@@ -25,16 +31,7 @@ export async function runDrain(
   // persist.failed:某筆寫入參考池失敗(可重試)的 side-channel 旗標。每筆處理前歸零,
   // handleUpdate 內若觸發 onPersistError 會翻 true → 該筆「沒持久化」,不能 ack。
   const persist: PersistFlag = { failed: false };
-  const bot = createBot(
-    config,
-    storage,
-    {
-      onPersistError: () => {
-        persist.failed = true;
-      },
-    },
-    target,
-  );
+  const bot = createBot(config, storage, drainHooks(persist), target);
   // handleUpdate 要 botInfo 才能正確解析群組內的 /command@botname;先抓好(launch 平時會做)。
   // 包重試:這是整輪最早的網路 I/O,裸打時一次 ECONNRESET 就報銷整輪 drain 並發出假紅燈。
   bot.botInfo = await callTelegramWithRetry("getMe", () => bot.telegram.getMe());
@@ -43,11 +40,10 @@ export async function runDrain(
     bot.telegram.deleteWebhook({ drop_pending_updates: false }),
   );
 
-  const result = await drainUpdates(bot, persist, "參考池");
+  // 中途 reject(領取/確認更新失敗)時 drainWithTally 會先印「已處理 N 筆、M 筆尚未確認」再丟出原錯誤。
+  const { result, tally } = await drainWithTally(bot, persist, "參考池");
 
-  logger.info(
-    `drain ${result.aborted ? "中止(寫入失敗,部分未處理)" : "完成"}:已處理 ${result.processed} 筆更新`,
-  );
+  logDrainSummary(result, tally);
   // 不 prune:參考池是永久池,bot 只 append 不刪列(prune 已隨暫存區一起退役)。
 
   // (tbvoc 既有行為)中止時先送 Telegram 告警、再回非零碼:第一時間直達 ERROR_CHAT_ID;
@@ -61,5 +57,5 @@ export async function runDrain(
       ),
     ).catch((e) => logger.error(`通知 error chat 失敗:${errSummary(e)}`));
   }
-  return exitCodeFor(result);
+  return exitCodeFor(result, tally);
 }
