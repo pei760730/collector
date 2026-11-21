@@ -98,3 +98,12 @@ describe("runStats — 參考池統計訊息", () => {
     expect(reply).not.toMatch(/[\uD800-\uDFFF]/u);
   });
 });
+
+it("零筆最近素材不回傳整個參考池，總數仍保留", async () => {
+  const storage = new MemoryStorage();
+  await storage.append(row("youtube", "https://example.test/one"));
+  const reply = await runStats({ storage, recentLimit: 0 });
+  expect(reply).toContain("共 1 筆未挑");
+  expect(reply).toContain("最近 0 筆:");
+  expect(reply).not.toContain("example.test/one");
+});
