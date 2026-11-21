@@ -9,11 +9,13 @@ export function computeStats(
   rows: RefRow[],
   opts: { recentLimit: number; nowMs: number },
 ): StatsSummary {
+  // Sheet 的預填勾選框或殘留欄位可能讓空白列出現在 API 回應；沒有連結就不是參考素材。
+  const pool = rows.filter((row) => row.連結.trim() !== "");
   const byPlatform: Record<string, number> = {};
   let addedThisWeek = 0;
   let addedThisMonth = 0;
 
-  for (const r of rows) {
+  for (const r of pool) {
     const p = r.平台 || "未知";
     byPlatform[p] = (byPlatform[p] ?? 0) + 1;
 
@@ -23,10 +25,10 @@ export function computeStats(
   }
 
   // 最近 N 筆 = 檔尾(append 在尾端,愈後面愈新)
-  const recent = rows.slice(-opts.recentLimit).reverse();
+  const recent = pool.slice(-opts.recentLimit).reverse();
 
   return {
-    total: rows.length,
+    total: pool.length,
     byPlatform,
     addedThisWeek,
     addedThisMonth,
