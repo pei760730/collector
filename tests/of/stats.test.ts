@@ -43,6 +43,18 @@ describe("computeStats — 純函式彙總", () => {
     expect(s.recent.map((r) => r.VIDEO_ID)).toEqual(["tt_c", "ig_b"]);
   });
 
+  it("recentLimit 為 0 時不回傳最近明細，保留彙總", () => {
+    const s = computeStats(SEED, { recentLimit: 0, nowMs: NOW });
+    expect(s).toEqual({
+      total: 3,
+      byPlatform: { Instagram: 2, TikTok: 1 },
+      byStatus: { pending_review: 2, unsupported: 1 },
+      addedThisWeek: 2,
+      addedThisMonth: 2,
+      recent: [],
+    });
+  });
+
   it("空資料 → total 0、recent 空", () => {
     const s = computeStats([], { recentLimit: 5, nowMs: NOW });
     expect(s.total).toBe(0);
@@ -65,6 +77,17 @@ describe("runStats — 訊息格式", () => {
     expect(reply).toContain("Instagram:2");
     expect(reply).toContain("pending_review:2");
     expect(reply).toContain("ig_b"); // 最近筆有列出
+  });
+
+  it("不要求最近明細時，回覆只顯示彙總", async () => {
+    const reply = await runStats({
+      storage: new MemoryStorage(SEED),
+      recentLimit: 0,
+      now: () => NOW,
+    });
+    expect(reply).toContain("共 3 筆");
+    expect(reply).toContain("最近 0 筆:");
+    for (const r of SEED) expect(reply).not.toContain(r.VIDEO_ID);
   });
 
   it("Other 桶(不在 core PLATFORM_ICON)最近筆退回 🔗 圖示", async () => {
