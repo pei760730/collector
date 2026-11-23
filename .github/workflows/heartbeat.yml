@@ -49,7 +49,7 @@ jobs:
             gh workflow enable "$wf" >/dev/null 2>&1 || echo "::warning::gh workflow enable $wf 未成功,保活這輪沒做到(新鮮度檢查照跑)"
           done
           # per_page=1 的第一頁只有空陣列且 total_count 為數字 0 才算「沒有 run」;
-          # 取不到可判讀的證據則不補跑,
+          # 非空第一頁須為一筆且 total_count 為正整數；取不到可判讀的證據則不補跑,
           # 由 job 層 failure 通知。避免把 API 回應或 CLI 錯誤細節印進公開 log。
           if ! created_at=$(
             gh api "repos/$GH_REPO/actions/workflows/collect.yml/runs?per_page=1" 2>/dev/null |
@@ -59,6 +59,9 @@ jobs:
                   if .[0].total_count == 0 then ""
                   else error("empty runs without zero total count")
                   end
+                elif (.[0].workflow_runs | length) != 1 or
+                     (.[0].total_count | if type == "number" then (. < 1 or . != floor) else true end)
+                then error("invalid runs count")
                 else .[0].workflow_runs[0].created_at |
                   if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") then .
                   else error("invalid timestamp")

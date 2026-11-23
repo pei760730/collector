@@ -129,6 +129,31 @@ describe("heartbeat bash watchdog", () => {
     expect(result.stdout + result.stderr).not.toContain("private-marker");
   });
 
+  it.each([
+    ["有過期 run 但 total_count 為零", 0, 8, 1],
+    ["有近期 run 但 total_count 為零", 0, 1, 1],
+    ["有 run 但缺 total_count", undefined, 8, 1],
+    ["有 run 但 total_count 為小數", 1.5, 8, 1],
+    ["per_page=1 卻回傳多筆 run", 2, 8, 2],
+  ] as const)("%s → 證據不明，不補觸發也不回報健康", (_label, count, age, rows) => {
+    const createdAt = new Date(Date.now() - age * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const body = JSON.stringify({ total_count: count, workflow_runs: Array.from({ length: rows }, () => ({ created_at: createdAt })) });
+    const result = runStub(null, false, false, body);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("Actions 查詢失敗或回應無法判讀");
+    expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout).not.toContain("alert=");
+  });
+
+  it("total_count 大於第一頁筆數時，仍用該頁唯一 run 判斷新鮮度", () => {
+    const createdAt = new Date(Date.now() - 8 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const body = JSON.stringify({ total_count: 3, workflow_runs: [{ created_at: createdAt }] });
+    const result = runStub(null, false, false, body);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("STUB_DISPATCH");
+    expect(result.stdout).toContain("alert=false");
+  });
+
   it("未來時間戳不是新鮮度證據，也不能用來補觸發", () => {
     const result = runStub(-1);
     expect(result.status).not.toBe(0);
