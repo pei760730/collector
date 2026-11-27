@@ -14,13 +14,21 @@ function watchdogScript(): string {
   return block.replace(/^ {10}/gm, "");
 }
 
-function runStub(ageHours: number | null, dispatchFails = false, apiFails = false) {
-  const createdAt = ageHours === null ? "" : new Date(Date.now() - ageHours * 3_600_000).toISOString();
+function runStub(ageHours: number | null, dispatchFails = false, apiFails = false, apiBody?: string) {
+  const createdAt = ageHours === null ? null : new Date(Date.now() - ageHours * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
   const script = `
     gh() {
       if [ "$1" = api ]; then
-        if [ "$STUB_API_FAILS" = true ]; then return 1; fi
-        printf '%s\\n' "$STUB_CREATED_AT"
+        if [ "$STUB_API_FAILS" = true ]; then
+          printf '%s\\n' "$STUB_API_BODY"
+          echo private-cli-error >&2
+          return 1
+        fi
+        if [ "$3" = --jq ]; then
+          printf '%s\\n' "$STUB_API_BODY" | jq -r "$4"
+        else
+          printf '%s\\n' "$STUB_API_BODY"
+        fi
       elif [ "$1" = workflow ] && [ "$2" = run ]; then
         echo STUB_DISPATCH
         if [ "$STUB_DISPATCH_FAILS" = true ]; then return 1; fi
@@ -50,7 +58,7 @@ function runStub(ageHours: number | null, dispatchFails = false, apiFails = fals
       RUN_URL: "https://example.com/actions/runs/123",
       GITHUB_OUTPUT: outputFile,
       GITHUB_STEP_SUMMARY: summaryFile,
-      STUB_CREATED_AT: createdAt,
+      STUB_API_BODY: apiBody ?? JSON.stringify({ total_count: createdAt === null ? 0 : 1, workflow_runs: createdAt === null ? [] : [{ created_at: createdAt }] }),
       STUB_DISPATCH_FAILS: String(dispatchFails),
       STUB_API_FAILS: String(apiFails),
     },
@@ -94,6 +102,63 @@ describe("heartbeat bash watchdog", () => {
     const result = runStub(0, false, true);
     expect(result.status).not.toBe(0);
     expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout + result.stderr).not.toContain("private-cli-error");
+  });
+
+  it.each([
+    ["缺 workflow_runs", '{"unexpected":"private-marker"}'],
+    ["空陣列但 total_count 為正數", '{"workflow_runs":[],"total_count":1}'],
+    ["空陣列但 total_count 為負數", '{"workflow_runs":[],"total_count":-1}'],
+    ["空陣列但 total_count 為小數", '{"workflow_runs":[],"total_count":0.5}'],
+    ["空陣列但 total_count 是字串", '{"workflow_runs":[],"total_count":"0"}'],
+    ["空陣列但 total_count 是布林值", '{"workflow_runs":[],"total_count":false}'],
+    ["空陣列但 total_count 是 null", '{"workflow_runs":[],"total_count":null}'],
+    ["空陣列但缺 total_count", '{"workflow_runs":[]}'],
+    ["workflow_runs 非陣列", '{"workflow_runs":null}'],
+    ["run 缺 created_at", '{"workflow_runs":[{}]}'],
+    ["空 HTTP body", ""],
+    ["無效時間戳", '{"workflow_runs":[{"created_at":"private-marker"}]}'],
+    ["不可能的日期", '{"workflow_runs":[{"created_at":"2026-02-30T00:00:00Z"}]}'],
+    ["無效 JSON", '{"private-marker":'],
+    ["多個 JSON 文件", '{"workflow_runs":[]} {"workflow_runs":[]}'],
+  ])("%s → 證據不明，不補觸發也不輸出 body", (_label, body) => {
+    const result = runStub(null, false, false, body);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout).not.toContain("alert=false");
+    expect(result.stdout + result.stderr).not.toContain("private-marker");
+  });
+
+  it.each([
+    ["有過期 run 但 total_count 為零", 0, 8, 1],
+    ["有近期 run 但 total_count 為零", 0, 1, 1],
+    ["有 run 但缺 total_count", undefined, 8, 1],
+    ["有 run 但 total_count 為小數", 1.5, 8, 1],
+    ["per_page=1 卻回傳多筆 run", 2, 8, 2],
+  ] as const)("%s → 證據不明，不補觸發也不回報健康", (_label, count, age, rows) => {
+    const createdAt = new Date(Date.now() - age * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const body = JSON.stringify({ total_count: count, workflow_runs: Array.from({ length: rows }, () => ({ created_at: createdAt })) });
+    const result = runStub(null, false, false, body);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("Actions 查詢失敗或回應無法判讀");
+    expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout).not.toContain("alert=");
+  });
+
+  it("total_count 大於第一頁筆數時，仍用該頁唯一 run 判斷新鮮度", () => {
+    const createdAt = new Date(Date.now() - 8 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const body = JSON.stringify({ total_count: 3, workflow_runs: [{ created_at: createdAt }] });
+    const result = runStub(null, false, false, body);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("STUB_DISPATCH");
+    expect(result.stdout).toContain("alert=false");
+  });
+
+  it("未來時間戳不是新鮮度證據，也不能用來補觸發", () => {
+    const result = runStub(-1);
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("STUB_DISPATCH");
+    expect(result.stdout).not.toContain("alert=false");
   });
 });
 

@@ -41,18 +41,43 @@ jobs:
       - name: Check collect.yml freshness (self-heal)
         id: watch
         shell: bash
-        # tests/workflows/heartbeat.test.ts 會抽出這段 run block、以 stub gh 跑四種分支,改邏輯要一起改測試。
+        # tests/workflows/heartbeat.test.ts 會抽出這段 run block、以 stub gh 驗證各分支。
         run: |
           # API 保活 + 停用自癒:對 collect.yml 與本 workflow 呼叫 enable(冪等),重置 60 天閒置計時。
           # 失敗不擋後面的新鮮度檢查(新鮮度才是真正的告警依據)。
           for wf in collect.yml heartbeat.yml; do
             gh workflow enable "$wf" >/dev/null 2>&1 || echo "::warning::gh workflow enable $wf 未成功,保活這輪沒做到(新鮮度檢查照跑)"
           done
-          # 查詢失敗 = 本 step 非 0 → job 層 failure 通知(看守自己壞掉也要有聲音)。
-          created_at=$(gh api "repos/$GH_REPO/actions/workflows/collect.yml/runs?per_page=1" --jq '.workflow_runs[0].created_at // empty')
+          # per_page=1 的第一頁只有空陣列且 total_count 為數字 0 才算「沒有 run」;
+          # 非空第一頁須為一筆且 total_count 為正整數；取不到可判讀的證據則不補跑,
+          # 由 job 層 failure 通知。避免把 API 回應或 CLI 錯誤細節印進公開 log。
+          if ! created_at=$(
+            gh api "repos/$GH_REPO/actions/workflows/collect.yml/runs?per_page=1" 2>/dev/null |
+              jq -ers '
+                if length != 1 or (.[0].workflow_runs | type) != "array" then error("invalid runs")
+                elif (.[0].workflow_runs | length) == 0 then
+                  if .[0].total_count == 0 then ""
+                  else error("empty runs without zero total count")
+                  end
+                elif (.[0].workflow_runs | length) != 1 or
+                     (.[0].total_count | if type == "number" then (. < 1 or . != floor) else true end)
+                then error("invalid runs count")
+                else .[0].workflow_runs[0].created_at |
+                  if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$") then .
+                  else error("invalid timestamp")
+                  end
+                end' 2>/dev/null
+          ); then
+            echo "::error::無法確認 collect.yml 最新 run:Actions 查詢失敗或回應無法判讀"
+            exit 1
+          fi
           now=$(date -u +%s)
           if [ -n "$created_at" ]; then
-            age_h=$(( (now - $(date -u -d "$created_at" +%s)) / 3600 ))
+            if ! created_epoch=$(date -u -d "$created_at" +%s 2>/dev/null) || [ "$created_epoch" -gt "$now" ]; then
+              echo "::error::無法確認 collect.yml 最新 run:時間戳無效或在未來"
+              exit 1
+            fi
+            age_h=$(( (now - created_epoch) / 3600 ))
             age_label="${age_h}h"
           else
             age_h=999999
